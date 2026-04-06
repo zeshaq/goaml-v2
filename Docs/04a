@@ -1,0 +1,24 @@
+Layer,Service / Component,Model / Technology,Port,Role
+App,FastAPI,——,——,"REST gateway, auth, request routing"
+App,React UI,——,——,"Investigator dashboard, case management"
+App,Superset,——,——,AML analytics & BI dashboards
+App,Nginx,——,——,"Reverse proxy, TLS termination"
+Workflow,n8n,——,——,"Alert automation, notification pipelines"
+Workflow,Camunda,——,——,"BPMN case routing, compliance workflows"
+Agent,LangGraph,"llama-3.3-70b-instruct (FP8, TP=2)",8000,"Primary reasoning: SAR drafting, multi-step investigation"
+Agent,LangGraph,llama-3.1-8b-instruct,8002,"Fast sub-tasks: intent routing, quick classification"
+Agent,MCP Server,——,——,"Tool routing, external API orchestration"
+Agent,MLflow,——,——,"Experiment tracking, model versioning"
+Agent,Triton FIL,XGBoost,8010,Structured risk scoring: tabular tx features
+Docs,Apache Tika,——,——,"Text extraction from PDF, DOCX, XLSX"
+Docs,OCR,nemotron-ocr-v1,8021,Scanned KYC docs & bank statements
+Docs,Parser,nemotron-parse,8022,Structured field extraction from parsed text
+Docs,PII,gliner-pii,8020,Entity redaction before storage / LLM context
+Docs,Watchlist,OpenSanctions,——,Sanctions & PEP screening
+Graph+Vec,Neo4j,——,——,"Entity graph, AML link analysis, ring detection"
+Graph+Vec,Milvus,nv-embedqa-e5-v5,8001,Vector embeddings: semantic search
+Graph+Vec,Re-ranker,llama-nemotron-rerank-1b-v2,8003,Re-ranks retrieval results for LLM context
+Storage,PostgreSQL,——,——,"Cases, alerts, users, audit trail"
+Storage,ClickHouse,——,——,"Transaction analytics, OLAP queries"
+Storage,Redis,——,——,"Session state, rate limiting, cache"
+Hardware,GPU Server,2× NVIDIA L40S (48 GB each),——,Hosts all NIM containers (70b + sidecars)

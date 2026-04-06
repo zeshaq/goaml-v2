@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goAML-V2 — Fullstack Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --border: rgba(255,255,255,0.08);
+    --text-primary: #e8e6df;
+    --text-secondary: #8a8880;
+    --purple-fill: #1e1a3a; --purple-stroke: #534AB7; --purple-text: #AFA9EC;
+    --teal-fill: #0d2420; --teal-stroke: #0F6E56; --teal-text: #5DCAA5;
+    --blue-fill: #0c1c30; --blue-stroke: #185FA5; --blue-text: #85B7EB;
+    --coral-fill: #2a1208; --coral-stroke: #993C1D; --coral-text: #F0997B;
+    --green-fill: #0f1f08; --green-stroke: #3B6D11; --green-text: #97C459;
+    --gray-fill: #1a1a18; --gray-stroke: #5F5E5A; --gray-text: #B4B2A9;
+    --amber-fill: #251800; --amber-stroke: #854F0B; --amber-text: #EF9F27;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    min-height: 100vh;
+    padding: 2rem 1.5rem 3rem;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--text-primary);
+    text-transform: uppercase;
+  }
+  header span {
+    font-size: 11px;
+    color: var(--text-secondary);
+    letter-spacing: .04em;
+  }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .layer {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .layer-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    min-width: 72px;
+    text-align: center;
+  }
+  .layer-desc { font-size: 11px; color: var(--text-secondary); }
+  .layer-body {
+    padding: 10px 16px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid;
+    min-width: 160px;
+    flex: 1;
+  }
+  .chip-name { font-size: 12px; font-weight: 600; }
+  .chip-sub { font-size: 10px; opacity: .7; }
+  .chip-port {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+    opacity: .8;
+    width: fit-content;
+  }
+
+  .lyr-app    { background: var(--purple-fill); border-color: var(--purple-stroke); }
+  .lyr-app .layer-label  { background: #2a2450; color: var(--purple-text); border: 1px solid var(--purple-stroke); }
+  .lyr-app .chip         { background: #231e45; border-color: var(--purple-stroke); color: var(--purple-text); }
+  .lyr-app .chip-port    { border-color: var(--purple-stroke); color: var(--purple-text); }
+
+  .lyr-workflow { background: var(--teal-fill); border-color: var(--teal-stroke); }
+  .lyr-workflow .layer-label { background: #0f2d26; color: var(--teal-text); border: 1px solid var(--teal-stroke); }
+  .lyr-workflow .chip        { background: #0d2820; border-color: var(--teal-stroke); color: var(--teal-text); }
+  .lyr-workflow .chip-port   { border-color: var(--teal-stroke); color: var(--teal-text); }
+
+  .lyr-agent { background: var(--blue-fill); border-color: var(--blue-stroke); }
+  .lyr-agent .layer-label { background: #0e2240; color: var(--blue-text); border: 1px solid var(--blue-stroke); }
+  .lyr-agent .chip        { background: #0b1c38; border-color: var(--blue-stroke); color: var(--blue-text); }
+  .lyr-agent .chip-port   { border-color: var(--blue-stroke); color: var(--blue-text); }
+
+  .nim-bar {
+    margin: 4px 0 2px;
+    background: #1a2840;
+    border: 1px solid var(--blue-stroke);
+    border-radius: 6px;
+    padding: 8px 12px;
+    width: 100%;
+  }
+  .nim-bar-title { font-size: 10px; font-weight: 600; color: var(--blue-text); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+  .nim-ports { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nim-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #0d1828;
+    border: 1px solid var(--blue-stroke);
+    color: var(--blue-text);
+  }
+  .nim-tag b { color: #e8e6df; }
+
+  .lyr-docs { background: var(--coral-fill); border-color: var(--coral-stroke); }
+  .lyr-docs .layer-label { background: #361508; color: var(--coral-text); border: 1px solid var(--coral-stroke); }
+  .lyr-docs .chip        { background: #2e1006; border-color: var(--coral-stroke); color: var(--coral-text); }
+  .lyr-docs .chip-port   { border-color: var(--coral-stroke); color: var(--coral-text); }
+
+  .lyr-graph { background: var(--green-fill); border-color: var(--green-stroke); }
+  .lyr-graph .layer-label { background: #14280a; color: var(--green-text); border: 1px solid var(--green-stroke); }
+  .lyr-graph .chip        { background: #101e07; border-color: var(--green-stroke); color: var(--green-text); }
+  .lyr-graph .chip-port   { border-color: var(--green-stroke); color: var(--green-text); }
+
+  .lyr-storage { background: var(--gray-fill); border-color: var(--gray-stroke); }
+  .lyr-storage .layer-label { background: #232220; color: var(--gray-text); border: 1px solid var(--gray-stroke); }
+  .lyr-storage .chip        { background: #1d1c1a; border-color: var(--gray-stroke); color: var(--gray-text); }
+  .lyr-storage .chip-port   { border-color: var(--gray-stroke); color: var(--gray-text); }
+
+  .lyr-hw { background: var(--amber-fill); border-color: var(--amber-stroke); }
+  .lyr-hw .layer-label { background: #2e1e00; color: var(--amber-text); border: 1px solid var(--amber-stroke); }
+  .lyr-hw .chip        { background: #281900; border-color: var(--amber-stroke); color: var(--amber-text); }
+  .lyr-hw .chip-port   { border-color: var(--amber-stroke); color: var(--amber-text); }
+
+  .arrow {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1;
+    margin: -2px 0;
+  }
+  footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: .04em;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header>
+  <h1>goAML-V2</h1>
+  <span>Fullstack architecture · model selection map</span>
+</header>
+
+<div class="stack">
+
+  <!-- APP -->
+  <div class="layer lyr-app">
+    <div class="layer-header">
+      <span class="layer-label">App</span>
+      <span class="layer-desc">FastAPI · React UI · Superset · Nginx</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip"><span class="chip-name">FastAPI</span><span class="chip-sub">REST gateway, auth, routing</span></div>
+      <div class="chip"><span class="chip-name">React UI</span><span class="chip-sub">Investigator dashboard, case mgmt</span></div>
+      <div class="chip"><span class="chip-name">Superset</span><span class="chip-sub">AML analytics &amp; BI dashboards</span></div>
+      <div class="chip"><span class="chip-name">Nginx</span><span class="chip-sub">Reverse proxy, TLS termination</span></div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- WORKFLOW -->
+  <div class="layer lyr-workflow">
+    <div class="layer-header">
+      <span class="layer-label">Workflow</span>
+      <span class="layer-desc">n8n · Camunda · alert orchestration · case routing</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip"><span class="chip-name">n8n</span><span class="chip-sub">Alert automation, notification pipelines</span></div>
+      <div class="chip"><span class="chip-name">Camunda BPMN</span><span class="chip-sub">Compliance workflows, case routing</span></div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- AGENT -->
+  <div class="layer lyr-agent">
+    <div class="layer-header">
+      <span class="layer-label">Agent</span>
+      <span class="layer-desc">LangGraph · MCP Server · MLflow · NIM inference</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip">
+        <span class="chip-name">LangGraph agent</span>
+        <span class="chip-sub">SAR drafting, multi-step investigation</span>
+        <span class="chip-port">llama-3.3-70b-instruct · FP8 · TP=2</span>
+        <span class="chip-port">:8000</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">LangGraph fast</span>
+        <span class="chip-sub">Intent routing, quick classification</span>
+        <span class="chip-port">llama-3.1-8b-instruct</span>
+        <span class="chip-port">:8002</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">MCP Server</span>
+        <span class="chip-sub">Tool routing, external API orchestration</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">MLflow</span>
+        <span class="chip-sub">Experiment tracking, model versioning</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">Triton FIL</span>
+        <span class="chip-sub">Tabular risk scoring, deterministic</span>
+        <span class="chip-port">XGBoost</span>
+        <span class="chip-port">:8010</span>
+      </div>
+      <div class="nim-bar">
+        <div class="nim-bar-title">NIM model selection</div>
+        <div class="nim-ports">
+          <span class="nim-tag"><b>:8000</b> llama-3.3-70b FP8 TP=2</span>
+          <span class="nim-tag"><b>:8002</b> llama-3.1-8b</span>
+          <span class="nim-tag"><b>:8001</b> nv-embedqa-e5-v5</span>
+          <span class="nim-tag"><b>:8003</b> nemotron-rerank-1b-v2</span>
+          <span class="nim-tag"><b>:8021</b> nemotron-ocr-v1</span>
+          <span class="nim-tag"><b>:8022</b> nemotron-parse</span>
+          <span class="nim-tag"><b>:8020</b> gliner-pii</span>
+          <span class="nim-tag"><b>:8010</b> XGBoost Triton FIL</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- DOCS -->
+  <div class="layer lyr-docs">
+    <div class="layer-header">
+      <span class="layer-label">Docs</span>
+      <span class="layer-desc">Tika → nemotron-ocr-v1 · nemotron-parse · gliner-pii · OpenSanctions</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip"><span class="chip-name">Apache Tika</span><span class="chip-sub">Text extraction — PDF, DOCX, XLSX</span></div>
+      <div class="chip">
+        <span class="chip-name">OCR</span>
+        <span class="chip-sub">Scanned KYC docs &amp; bank statements</span>
+        <span class="chip-port">nemotron-ocr-v1 · :8021</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">Parser</span>
+        <span class="chip-sub">Structured field extraction</span>
+        <span class="chip-port">nemotron-parse · :8022</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">PII redaction</span>
+        <span class="chip-sub">Before storage &amp; LLM context</span>
+        <span class="chip-port">gliner-pii · :8020</span>
+      </div>
+      <div class="chip"><span class="chip-name">OpenSanctions</span><span class="chip-sub">Sanctions &amp; PEP screening</span></div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- GRAPH + VECTOR -->
+  <div class="layer lyr-graph">
+    <div class="layer-header">
+      <span class="layer-label">Graph+Vec</span>
+      <span class="layer-desc">Neo4j · Milvus · re-ranker</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip"><span class="chip-name">Neo4j</span><span class="chip-sub">Entity graph, AML link analysis, ring detection</span></div>
+      <div class="chip">
+        <span class="chip-name">Milvus</span>
+        <span class="chip-sub">Semantic search — tx, cases, entities</span>
+        <span class="chip-port">nv-embedqa-e5-v5 · :8001</span>
+      </div>
+      <div class="chip">
+        <span class="chip-name">Re-ranker</span>
+        <span class="chip-sub">Re-rank before LLM context injection</span>
+        <span class="chip-port">nemotron-rerank-1b-v2 · :8003</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- STORAGE -->
+  <div class="layer lyr-storage">
+    <div class="layer-header">
+      <span class="layer-label">Storage</span>
+      <span class="layer-desc">PostgreSQL · ClickHouse · Redis</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip"><span class="chip-name">PostgreSQL</span><span class="chip-sub">Cases, alerts, users, audit trail</span></div>
+      <div class="chip"><span class="chip-name">ClickHouse</span><span class="chip-sub">Transaction analytics, OLAP queries</span></div>
+      <div class="chip"><span class="chip-name">Redis</span><span class="chip-sub">Session state, rate limiting, cache</span></div>
+    </div>
+  </div>
+
+  <div class="arrow">↑</div>
+
+  <!-- HARDWARE -->
+  <div class="layer lyr-hw">
+    <div class="layer-header">
+      <span class="layer-label">Hardware</span>
+      <span class="layer-desc">2× NVIDIA L40S · 48 GB each · hosts all NIM containers</span>
+    </div>
+    <div class="layer-body">
+      <div class="chip" style="flex: 1;">
+        <span class="chip-name">GPU server · L40S ×2</span>
+        <span class="chip-sub">llama-3.3-70b FP8 TP=2 — primary reasoning</span>
+        <span class="chip-sub">llama-3.1-8b · embedqa · rerank-1b · ocr · parse · pii · XGBoost-FIL</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <span>goAML-V2 · /home/ze/dashboard-aml</span>
+  <span>generated by Claude · goaml_v2_fullstack_architecture.html</span>
+</footer>
+
+</body>
+</html>

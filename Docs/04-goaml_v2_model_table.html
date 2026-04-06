@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goAML-V2 — Model Selection Table</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --border: rgba(255,255,255,0.08);
+    --border-row: rgba(255,255,255,0.05);
+    --text-primary: #e8e6df;
+    --text-secondary: #8a8880;
+    --mono: 'IBM Plex Mono', 'Courier New', monospace;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--mono);
+    min-height: 100vh;
+    padding: 2rem 1.5rem 3rem;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  header span { font-size: 11px; color: var(--text-secondary); letter-spacing: .04em; }
+
+  .table-wrap { width: 100%; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  col.col-layer   { width: 10%; }
+  col.col-service { width: 14%; }
+  col.col-model   { width: 26%; }
+  col.col-port    { width: 8%; }
+  col.col-role    { width: 42%; }
+
+  thead th {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-row);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(255,255,255,0.025); }
+
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .b-purple { background: #2a2450; color: #AFA9EC; border: 1px solid #534AB7; }
+  .b-teal   { background: #0f2d26; color: #5DCAA5; border: 1px solid #0F6E56; }
+  .b-blue   { background: #0e2240; color: #85B7EB; border: 1px solid #185FA5; }
+  .b-coral  { background: #361508; color: #F0997B; border: 1px solid #993C1D; }
+  .b-green  { background: #14280a; color: #97C459; border: 1px solid #3B6D11; }
+  .b-gray   { background: #232220; color: #B4B2A9; border: 1px solid #5F5E5A; }
+  .b-amber  { background: #2e1e00; color: #EF9F27; border: 1px solid #854F0B; }
+
+  .mono { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
+  .model-name { color: #85B7EB; font-size: 11px; }
+  .dash { color: var(--text-secondary); }
+
+  footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: .04em;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header>
+  <h1>goAML-V2</h1>
+  <span>Model selection table · all layers</span>
+</header>
+
+<div class="table-wrap">
+  <table>
+    <colgroup>
+      <col class="col-layer">
+      <col class="col-service">
+      <col class="col-model">
+      <col class="col-port">
+      <col class="col-role">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Layer</th>
+        <th>Service</th>
+        <th>Model / component</th>
+        <th>Port</th>
+        <th>Role</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge b-purple">App</span></td>
+        <td>FastAPI</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>REST gateway, auth, request routing</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-purple">App</span></td>
+        <td>React UI</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Investigator dashboard, case management</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-purple">App</span></td>
+        <td>Superset</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>AML analytics &amp; BI dashboards</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-purple">App</span></td>
+        <td>Nginx</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Reverse proxy, TLS termination</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-teal">Workflow</span></td>
+        <td>n8n</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Alert automation, notification pipelines</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-teal">Workflow</span></td>
+        <td>Camunda</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>BPMN case routing, compliance workflows</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-blue">Agent</span></td>
+        <td>LangGraph</td>
+        <td class="model-name">llama-3.3-70b-instruct · FP8 · TP=2</td>
+        <td class="mono">8000</td>
+        <td>Primary reasoning — SAR drafting, multi-step investigation, entity resolution</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-blue">Agent</span></td>
+        <td>LangGraph</td>
+        <td class="model-name">llama-3.1-8b-instruct</td>
+        <td class="mono">8002</td>
+        <td>Fast sub-tasks — intent routing, quick classification, low-latency assist</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-blue">Agent</span></td>
+        <td>MCP Server</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Tool routing, external API orchestration</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-blue">Agent</span></td>
+        <td>MLflow</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Experiment tracking, model versioning</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-blue">Agent</span></td>
+        <td>Triton FIL</td>
+        <td class="model-name">XGBoost</td>
+        <td class="mono">8010</td>
+        <td>Structured risk scoring — tabular tx features, deterministic inference</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-coral">Docs</span></td>
+        <td>Apache Tika</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Text extraction from PDF, DOCX, XLSX</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-coral">Docs</span></td>
+        <td>OCR</td>
+        <td class="model-name">nemotron-ocr-v1</td>
+        <td class="mono">8021</td>
+        <td>Scanned KYC docs &amp; bank statements</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-coral">Docs</span></td>
+        <td>Parser</td>
+        <td class="model-name">nemotron-parse</td>
+        <td class="mono">8022</td>
+        <td>Structured field extraction from parsed text</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-coral">Docs</span></td>
+        <td>PII</td>
+        <td class="model-name">gliner-pii</td>
+        <td class="mono">8020</td>
+        <td>Entity redaction before storage / LLM context</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-coral">Docs</span></td>
+        <td>Watchlist</td>
+        <td class="dash">OpenSanctions</td>
+        <td class="mono dash">—</td>
+        <td>Sanctions &amp; PEP screening</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-green">Graph+Vec</span></td>
+        <td>Neo4j</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Entity graph, AML link analysis, ring detection</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-green">Graph+Vec</span></td>
+        <td>Milvus</td>
+        <td class="model-name">nv-embedqa-e5-v5</td>
+        <td class="mono">8001</td>
+        <td>Vector embeddings — semantic search over tx, cases, entities</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-green">Graph+Vec</span></td>
+        <td>Re-ranker</td>
+        <td class="model-name">llama-nemotron-rerank-1b-v2</td>
+        <td class="mono">8003</td>
+        <td>Re-ranks retrieval results before LLM context injection</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-gray">Storage</span></td>
+        <td>PostgreSQL</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Cases, alerts, users, audit trail</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-gray">Storage</span></td>
+        <td>ClickHouse</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Transaction analytics, OLAP queries</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-gray">Storage</span></td>
+        <td>Redis</td>
+        <td class="dash">—</td>
+        <td class="mono dash">—</td>
+        <td>Session state, rate limiting, cache</td>
+      </tr>
+      <tr>
+        <td><span class="badge b-amber">Hardware</span></td>
+        <td>GPU server</td>
+        <td class="model-name">2× NVIDIA L40S · 48 GB each</td>
+        <td class="mono dash">—</td>
+        <td>Hosts all NIM containers — 70b FP8 TP=2 + all sidecar models</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<footer>
+  <span>goAML-V2 · /home/ze/dashboard-aml</span>
+  <span>generated by Claude · goaml_v2_model_table.html</span>
+</footer>
+
+</body>
+</html>
