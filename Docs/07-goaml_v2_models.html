@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goAML-V2 · NIM Models</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #080a0f;
+  --bg2:       #0d1017;
+  --bg3:       #111520;
+  --line:      rgba(255,255,255,0.06);
+  --line2:     rgba(255,255,255,0.12);
+  --text:      #ddd9cf;
+  --muted:     #5a5850;
+  --dim:       #3a3830;
+
+  --blue:      #4a9eff;
+  --blue-dim:  rgba(74,158,255,0.08);
+  --blue-glow: rgba(74,158,255,0.15);
+  --teal:      #2dd4bf;
+  --teal-dim:  rgba(45,212,191,0.08);
+  --amber:     #f59e0b;
+  --amber-dim: rgba(245,158,11,0.08);
+  --coral:     #fb7185;
+  --coral-dim: rgba(251,113,133,0.08);
+  --green:     #4ade80;
+  --green-dim: rgba(74,222,128,0.08);
+  --violet:    #a78bfa;
+  --violet-dim:rgba(167,139,250,0.08);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  min-height: 100vh;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* grid texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 3rem 2rem 4rem;
+}
+
+/* ── header ── */
+.hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 3rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--line2);
+  gap: 1rem;
+}
+.hdr-left {}
+.sys-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.hdr h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: #fff;
+  line-height: 1;
+}
+.hdr h1 span { color: var(--blue); }
+.hdr-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 10px;
+  letter-spacing: .04em;
+}
+.hdr-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.stat-pill {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.stat-pill b { color: var(--text); font-weight: 700; }
+
+/* ── section label ── */
+.section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line2);
+}
+
+/* ── cards grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1px;
+  background: var(--line2);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 2.5rem;
+}
+
+.card {
+  background: var(--bg2);
+  padding: 1.25rem 1.4rem;
+  position: relative;
+  transition: background .15s;
+  cursor: default;
+}
+.card:hover { background: var(--bg3); }
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px;
+  height: 100%;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.card:hover::before { opacity: 1; }
+
+.card.c-blue::before   { background: var(--blue); }
+.card.c-teal::before   { background: var(--teal); }
+.card.c-amber::before  { background: var(--amber); }
+.card.c-coral::before  { background: var(--coral); }
+.card.c-green::before  { background: var(--green); }
+.card.c-violet::before { background: var(--violet); }
+
+/* card top row */
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.card-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .02em;
+  word-break: break-all;
+}
+.port-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.c-blue  .port-badge { background: var(--blue-dim);   color: var(--blue);   border: 1px solid rgba(74,158,255,.2); }
+.c-teal  .port-badge { background: var(--teal-dim);   color: var(--teal);   border: 1px solid rgba(45,212,191,.2); }
+.c-amber .port-badge { background: var(--amber-dim);  color: var(--amber);  border: 1px solid rgba(245,158,11,.2); }
+.c-coral .port-badge { background: var(--coral-dim);  color: var(--coral);  border: 1px solid rgba(251,113,133,.2); }
+.c-green .port-badge { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(74,222,128,.2); }
+.c-violet .port-badge{ background: var(--violet-dim); color: var(--violet); border: 1px solid rgba(167,139,250,.2); }
+
+/* tags row */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.tag {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+  border: 1px solid var(--line2);
+}
+
+/* purpose */
+.purpose {
+  font-size: 11.5px;
+  font-weight: 300;
+  color: #9e9b92;
+  line-height: 1.6;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* spec row */
+.spec-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.spec {
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.spec b {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* layer marker */
+.layer-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.c-blue  .layer-dot { background: var(--blue); }
+.c-teal  .layer-dot { background: var(--teal); }
+.c-amber .layer-dot { background: var(--amber); }
+.c-coral .layer-dot { background: var(--coral); }
+.c-green .layer-dot { background: var(--green); }
+.c-violet .layer-dot{ background: var(--violet); }
+
+.layer-name {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+}
+.c-blue  .layer-name { color: var(--blue); }
+.c-teal  .layer-name { color: var(--teal); }
+.c-amber .layer-name { color: var(--amber); }
+.c-coral .layer-name { color: var(--coral); }
+.c-green .layer-name { color: var(--green); }
+.c-violet .layer-name{ color: var(--violet); }
+
+/* upgrade note */
+.upgrade {
+  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.18);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 2.5rem;
+}
+.upgrade-icon {
+  font-size: 14px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.upgrade svg { width: 14px; height: 14px; stroke: var(--amber); fill: none; stroke-width: 2; stroke-linecap: round; }
+.upgrade-text { font-size: 11px; color: #9e9b92; line-height: 1.6; }
+.upgrade-text b { color: var(--amber); font-weight: 500; }
+
+/* footer */
+footer {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line2);
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .04em;
+}
+
+/* stagger animation */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card { animation: fadeUp .35s ease both; }
+.card:nth-child(1) { animation-delay: .04s; }
+.card:nth-child(2) { animation-delay: .08s; }
+.card:nth-child(3) { animation-delay: .12s; }
+.card:nth-child(4) { animation-delay: .16s; }
+.card:nth-child(5) { animation-delay: .20s; }
+.card:nth-child(6) { animation-delay: .24s; }
+.card:nth-child(7) { animation-delay: .28s; }
+.card:nth-child(8) { animation-delay: .32s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="sys-label">goAML-V2 · /home/ze/dashboard-aml</div>
+      <h1>NIM <span>Models</span></h1>
+      <div class="hdr-sub">inference stack · model selection &amp; purpose map</div>
+    </div>
+    <div class="hdr-stats">
+      <div class="stat-pill"><b>8</b> models</div>
+      <div class="stat-pill"><b>2×</b> L40S · 48 GB</div>
+      <div class="stat-pill">FP8 · TP=2</div>
+    </div>
+  </header>
+
+  <div class="section-label">inference models</div>
+
+  <div class="grid">
+
+    <!-- llama 70b -->
+    <div class="card c-blue">
+      <div class="card-top">
+        <div class="card-name">llama-3.3-70b-instruct</div>
+        <div class="port-badge">:8000</div>
+      </div>
+      <div class="tags">
+        <span class="tag">FP8</span>
+        <span class="tag">TP=2</span>
+        <span class="tag">primary LLM</span>
+        <span class="layer-name"><span class="layer-dot"></span>Agent</span>
+      </div>
+      <div class="purpose">Primary reasoning engine inside LangGraph. Handles SAR narrative drafting, multi-step AML investigation chains, complex entity resolution, and alert explanation. Runs in FP8 precision across both L40S GPUs via tensor parallelism.</div>
+      <div class="spec-row">
+        <div class="spec">precision <b>FP8</b></div>
+        <div class="spec">parallelism <b>TP=2</b></div>
+        <div class="spec">use <b>quality-critical paths</b></div>
+      </div>
+    </div>
+
+    <!-- llama 8b -->
+    <div class="card c-blue">
+      <div class="card-top">
+        <div class="card-name">llama-3.1-8b-instruct</div>
+        <div class="port-badge">:8002</div>
+      </div>
+      <div class="tags">
+        <span class="tag">fast aux</span>
+        <span class="tag">low latency</span>
+        <span class="layer-name"><span class="layer-dot"></span>Agent</span>
+      </div>
+      <div class="purpose">Fast auxiliary model for latency-sensitive sub-tasks. Handles intent routing, quick classification, UI autocomplete, and lightweight chain steps where the 70b would be overkill. Route here for real-time transaction scoring assist.</div>
+      <div class="spec-row">
+        <div class="spec">use <b>latency-sensitive paths</b></div>
+      </div>
+    </div>
+
+    <!-- embedqa -->
+    <div class="card c-teal">
+      <div class="card-top">
+        <div class="card-name">nv-embedqa-e5-v5</div>
+        <div class="port-badge">:8001</div>
+      </div>
+      <div class="tags">
+        <span class="tag">embeddings</span>
+        <span class="tag">vector search</span>
+        <span class="layer-name"><span class="layer-dot"></span>Graph+Vec</span>
+      </div>
+      <div class="purpose">Generates dense vector embeddings for Milvus. Powers semantic search across transactions, entities, case notes, and documents. Enables similarity-based retrieval before re-ranking and LLM context injection.</div>
+      <div class="spec-row">
+        <div class="spec">store <b>Milvus</b></div>
+        <div class="spec">candidate upgrade <b>embed-1b-v2 (multilingual)</b></div>
+      </div>
+    </div>
+
+    <!-- rerank -->
+    <div class="card c-teal">
+      <div class="card-top">
+        <div class="card-name">llama-nemotron-rerank-1b-v2</div>
+        <div class="port-badge">:8003</div>
+      </div>
+      <div class="tags">
+        <span class="tag">re-ranking</span>
+        <span class="tag">retrieval</span>
+        <span class="layer-name"><span class="layer-dot"></span>Graph+Vec</span>
+      </div>
+      <div class="purpose">Re-ranks vector retrieval results from Milvus before they are injected into the 70b's context window. Improves precision of RAG pipelines — ensures only the most relevant case notes, transactions, and entity records reach the LLM.</div>
+      <div class="spec-row">
+        <div class="spec">sits between <b>Milvus → LLM context</b></div>
+      </div>
+    </div>
+
+    <!-- ocr -->
+    <div class="card c-coral">
+      <div class="card-top">
+        <div class="card-name">nemotron-ocr-v1</div>
+        <div class="port-badge">:8021</div>
+      </div>
+      <div class="tags">
+        <span class="tag">OCR</span>
+        <span class="tag">scanned docs</span>
+        <span class="layer-name"><span class="layer-dot"></span>Docs</span>
+      </div>
+      <div class="purpose">Extracts text from scanned KYC documents, bank statements, and handwritten forms after Apache Tika pre-processing. Feeds structured text downstream to nemotron-parse and gliner-pii before reaching storage or the LLM.</div>
+      <div class="spec-row">
+        <div class="spec">input <b>Tika → OCR</b></div>
+        <div class="spec">output <b>→ parse → pii</b></div>
+      </div>
+    </div>
+
+    <!-- parse -->
+    <div class="card c-coral">
+      <div class="card-top">
+        <div class="card-name">nemotron-parse</div>
+        <div class="port-badge">:8022</div>
+      </div>
+      <div class="tags">
+        <span class="tag">structured extraction</span>
+        <span class="tag">fields</span>
+        <span class="layer-name"><span class="layer-dot"></span>Docs</span>
+      </div>
+      <div class="purpose">Extracts structured fields from parsed document text — account numbers, dates, amounts, names, addresses. Converts unstructured document content into typed records ready for PostgreSQL ingestion and entity matching in Neo4j.</div>
+      <div class="spec-row">
+        <div class="spec">input <b>OCR text</b></div>
+        <div class="spec">output <b>typed fields → PostgreSQL / Neo4j</b></div>
+      </div>
+    </div>
+
+    <!-- pii -->
+    <div class="card c-violet">
+      <div class="card-top">
+        <div class="card-name">gliner-pii</div>
+        <div class="port-badge">:8020</div>
+      </div>
+      <div class="tags">
+        <span class="tag">PII detection</span>
+        <span class="tag">redaction</span>
+        <span class="layer-name"><span class="layer-dot"></span>Docs</span>
+      </div>
+      <div class="purpose">Detects and redacts personally identifiable information before documents reach storage or the LLM context window. Runs as a mandatory gate in the document pipeline — prevents PII leakage into vector embeddings, logs, and model prompts.</div>
+      <div class="spec-row">
+        <div class="spec">gate <b>before storage &amp; LLM context</b></div>
+      </div>
+    </div>
+
+    <!-- xgboost -->
+    <div class="card c-green">
+      <div class="card-top">
+        <div class="card-name">XGBoost · Triton FIL</div>
+        <div class="port-badge">:8010</div>
+      </div>
+      <div class="tags">
+        <span class="tag">risk scoring</span>
+        <span class="tag">tabular</span>
+        <span class="tag">deterministic</span>
+        <span class="layer-name"><span class="layer-dot"></span>Agent</span>
+      </div>
+      <div class="purpose">Structured AML and fraud risk scoring on tabular transaction features. Runs via Triton's Forest Inference Library for high-throughput, deterministic inference — no LLM overhead. Scores feed directly into alert generation and case triage.</div>
+      <div class="spec-row">
+        <div class="spec">runtime <b>Triton FIL</b></div>
+        <div class="spec">input <b>tabular tx features</b></div>
+        <div class="spec">output <b>risk score → alerts</b></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- upgrade note -->
+  <div class="upgrade">
+    <div class="upgrade-icon">
+      <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="6" x2="12" y2="18"/></svg>
+    </div>
+    <div class="upgrade-text">
+      <b>Candidate upgrade</b> — consider replacing <b>nv-embedqa-e5-v5 (:8001)</b> with <b>llama-nemotron-embed-1b-v2</b> for multilingual embedding coverage (Bangla, Arabic, and other languages relevant to BD-based AML operations). Drop-in replacement on the same port.
+    </div>
+  </div>
+
+  <footer>
+    <span>goAML-V2 · /home/ze/dashboard-aml</span>
+    <span>goaml_v2_models.html</span>
+  </footer>
+
+</div>
+</body>
+</html>
