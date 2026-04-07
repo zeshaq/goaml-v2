@@ -1,0 +1,161 @@
+version: "3.8"
+
+# Reference anchor for common NIM configuration to keep it DRY
+x-nim-common: &nim-common
+  runtime: nvidia
+  ipc: host # Important for large models to share memory effectively
+  env_file:
+    - .env # This expects an .env file with NGC_API_KEY in the same directory
+  volumes:
+    - nim_cache:/opt/nim/.cache # Cache model weights so they are not re-downloaded
+
+services:
+  # ==============================================================
+  # Agent Layer — Inference Core
+  # ==============================================================
+  
+  llama-3-3-70b-instruct:
+    <<: *nim-common
+    image: nvcr.io/nim/meta/llama-3.3-70b-instruct:latest
+    container_name: nim-llama-70b
+    ports:
+      - "8000:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+      # TP=2 requirement
+      - NIM_TENSOR_PARALLEL_DEGREE=2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+
+  llama-3-1-8b-instruct:
+    <<: *nim-common
+    image: nvcr.io/nim/meta/llama-3.1-8b-instruct:latest
+    container_name: nim-llama-8b
+    ports:
+      - "8002:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # XGBoost via Triton FIL (Fraud/AML Risk Scoring)
+  # Not a standard NIM - Deploying via raw Triton Inference Server
+  triton-xgboost:
+    image: nvcr.io/nvidia/tritonserver:24.01-py3
+    container_name: triton-xgboost
+    ports:
+      - "8010:8000"  # HTTP endpoint
+      - "8011:8001"  # GRPC endpoint
+      - "8012:8002"  # Metrics endpoint
+    command: ["tritonserver", "--model-repository=/models"]
+    volumes:
+      - ./models:/models # Ensure your XGBoost FIL models are placed in this local directory
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ==============================================================
+  # Document Layer
+  # ==============================================================
+
+  nemotron-ocr-v1:
+    <<: *nim-common
+    image: nvcr.io/nim/nvidia/nv-ocr-v1:latest # May vary based on exact NGC availability
+    container_name: nim-nemotron-ocr
+    ports:
+      - "8021:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  nemotron-parse:
+    <<: *nim-common
+    image: nvcr.io/nim/nvidia/nv-parse:latest # Verify NGC image namespace
+    container_name: nim-nemotron-parse
+    ports:
+      - "8022:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  gliner-pii:
+    # GLiNER isn't a standard NVIDIA NIM. You will likely need a custom 
+    # FastAPI or vLLM/Triton Image wrapping the HF model.
+    image: custom-gliner-pii:latest 
+    container_name: gliner-pii
+    ports:
+      - "8020:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ==============================================================
+  # Graph + Vector Layer
+  # ==============================================================
+
+  # Swapped to llama-nemotron-embed-1b-v2 as suggested for multilingual coverage
+  llama-nemotron-embed-1b-v2:
+    <<: *nim-common
+    image: nvcr.io/nim/nvidia/llama-nemotron-embed-1b-v2:latest
+    container_name: nim-embed
+    ports:
+      - "8001:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  llama-nemotron-rerank-1b-v2:
+    <<: *nim-common
+    image: nvcr.io/nim/nvidia/llama-nemotron-rerank-1b-v2:latest
+    container_name: nim-rerank
+    ports:
+      - "8003:8000"
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  nim_cache:
+    description: "Shared volume to cache HuggingFace/NIM model weights"
