@@ -1,6 +1,0 @@
-
-
-docker pull nvcr.io/nim/nvidia/llama-3.3-nemotron-super-49b-v1.5:2.0.1
-
-
-export NGC_API_KEY="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"
