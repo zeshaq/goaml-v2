@@ -64,30 +64,60 @@ goAML-V2 is a self-hosted, GPU-accelerated AML intelligence platform designed fo
 
 The platform is organized into 7 architectural layers, each deployed as an independent Docker Compose stack sharing a single external Docker network (`goaml-network`).
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        App Layer                            │
-│          FastAPI · React UI · Superset · Nginx              │
-├─────────────────────────────────────────────────────────────┤
-│                     Workflow Layer                          │
-│                    n8n · Camunda                            │
-├─────────────────────────────────────────────────────────────┤
-│                      Agent Layer                            │
-│              LangGraph · MCP Server · MLflow                │
-├─────────────────────────────────────────────────────────────┤
-│                       Docs Layer                            │
-│          Tika · yente (OpenSanctions) · Elasticsearch       │
-├─────────────────────────────────────────────────────────────┤
-│                   Graph + Vector Layer                      │
-│              Neo4j · Milvus · MinIO · etcd · Attu           │
-├─────────────────────────────────────────────────────────────┤
-│                     Storage Layer                           │
-│              PostgreSQL · ClickHouse · Redis                │
-├─────────────────────────────────────────────────────────────┤
-│                      ML / NIM Stack                         │
-│   Qwen3-32B · Qwen3-8B · nemotron-embed · nemotron-rerank   │
-│   XGBoost · gliner-PII · nemotron-ocr-v2 · Nemotron-Parse   │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph L1 [App Layer]
+        app1[FastAPI]
+        app2[React UI]
+        app3[Superset]
+        app4[Nginx]
+    end
+    
+    subgraph L2 [Workflow Layer]
+        wf1[n8n]
+        wf2[Camunda]
+    end
+    
+    subgraph L3 [Agent Layer]
+        ag1[LangGraph]
+        ag2[MCP Server]
+        ag3[MLflow]
+    end
+    
+    subgraph L4 [Docs Layer]
+        dc1[Tika]
+        dc2[yente - OpenSanctions]
+        dc3[Elasticsearch]
+    end
+    
+    subgraph L5 [Graph & Vector Layer]
+        gv1[Neo4j]
+        gv2[Milvus]
+        gv3[MinIO]
+        gv4[etcd]
+        gv5[Attu]
+    end
+    
+    subgraph L6 [Storage Layer]
+        st1[PostgreSQL]
+        st2[ClickHouse]
+        st3[Redis]
+    end
+    
+    subgraph L7 [ML / NIM Stack]
+        ml1[Qwen3-32B & 8B]
+        ml2[nemotron-embed & rerank]
+        ml3[XGBoost]
+        ml4[gliner-PII]
+        ml5[nemotron-ocr-v2 & Parse]
+    end
+    
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L4 --> L5
+    L5 --> L6
+    L6 --> L7
 ```
 
 ---
@@ -322,50 +352,52 @@ docker ps -q | xargs docker stop
 ## 9. Data Flow
 
 ### Transaction Ingestion Pipeline
-```
-External source
-    → FastAPI /api/v1/transactions (ingest)
-    → PostgreSQL (raw storage)
-    → ClickHouse (analytics write)
-    → XGBoost scorer (risk score)
-    → if risk > threshold → Alert created → n8n workflow triggered
-    → LangGraph transaction_monitor_agent (deep analysis)
-    → Neo4j (entity relationship update)
+```mermaid
+flowchart TD
+    EXT[External Source] -->|Ingest| API[FastAPI /api/v1/transactions]
+    API -->|Raw Storage| PG[(PostgreSQL)]
+    API -->|Analytics Write| CH[(ClickHouse)]
+    API -->|Risk Score| XGB[XGBoost Scorer]
+    XGB --> COND{Risk > Threshold?}
+    COND -->|Yes| ALERT[Alert Created]
+    ALERT --> N8N[n8n Workflow Triggered]
+    N8N --> LG[LangGraph transaction_monitor_agent]
+    LG --> NEO[(Neo4j Entity Relationship Update)]
 ```
 
 ### Document Processing Pipeline
-```
-Document upload (PDF, Office, image)
-    → Apache Tika (text extraction)
-    → nemotron-ocr-v2 (GPU OCR for scanned docs)
-    → Nemotron-Parse (structured extraction)
-    → gliner-PII (entity + PII extraction)
-    → llama-nemotron-embed (embeddings)
-    → Milvus (vector store)
-    → PostgreSQL (metadata)
+```mermaid
+flowchart TD
+    DOC[Document Upload <br> PDF, Office, Image] --> TIKA[Apache Tika: Text Extraction]
+    DOC --> OCR[nemotron-ocr-v2: GPU OCR]
+    TIKA & OCR --> PARSE[Nemotron-Parse: Structured Extraction]
+    PARSE --> PII[gliner-PII: Entity & PII Extraction]
+    PII --> EMBED[llama-nemotron-embed: Embeddings]
+    EMBED --> DB[(Milvus Vector Store)]
+    EMBED --> META[(PostgreSQL Metadata)]
 ```
 
 ### Entity Screening Pipeline
-```
-Entity name / identifier
-    → FastAPI /api/v1/screen
-    → yente API (OpenSanctions — 46 datasets)
-    → llama-nemotron-embed (semantic similarity)
-    → Milvus (vector search for fuzzy matching)
-    → llama-nemotron-rerank (result reranking)
-    → Neo4j (relationship context)
-    → Response with match score + source dataset
+```mermaid
+flowchart TD
+    ENT[Entity Name / Identifier] --> API[FastAPI /api/v1/screen]
+    API --> YENTE[yente API: OpenSanctions]
+    YENTE --> EMBED[llama-nemotron-embed: Semantic Similarity]
+    EMBED --> MILVUS[(Milvus Vector Search <br> fuzzy matching)]
+    MILVUS --> RERANK[llama-nemotron-rerank: Result Reranking]
+    RERANK --> NEO[(Neo4j: Relationship Context)]
+    NEO --> RES[Response: Match Score + Source Dataset]
 ```
 
 ### SAR Drafting Pipeline
-```
-Case opened (manual or automated)
-    → LangGraph sar_report_agent
-    → MCP tools: query_transactions + graph_lookup + screen_entity
-    → Qwen3-32B (narrative generation)
-    → Camunda (approval BPMN process)
-    → FastAPI (SAR record stored)
-    → n8n (notification workflow)
+```mermaid
+flowchart TD
+    CASE[Case Opened <br> Manual or Automated] --> AGENT[LangGraph sar_report_agent]
+    AGENT <-->|Tool Execution| MCP[MCP Tools <br> query_transactions, graph_lookup, screen_entity]
+    AGENT --> QWEN[Qwen3-32B: Narrative Generation]
+    QWEN --> CAMUNDA[Camunda: Approval BPMN Process]
+    CAMUNDA --> PG[(FastAPI: SAR Record Stored)]
+    PG --> N8N[n8n: Notification Workflow]
 ```
 
 ---
