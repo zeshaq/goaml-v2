@@ -86,6 +86,23 @@ Verified via live `docker ps` and model compose files:
 | `goaml-pii` | FastAPI wrapper | 8020 | PII extraction |
 | `goaml-scorer` | FastAPI wrapper | 8010 | XGBoost risk scoring |
 
+### 3.3 Dashboard UI Access Matrix
+
+The following dashboard-style UIs are live on `goaml-v2` and were verified as responding on `160.30.63.131`.
+
+Important: this section contains active access details from the current deployment and should be treated as sensitive.
+
+| App | Link | Login | Notes |
+|---|---|---|---|
+| Analyst UI | `http://160.30.63.131/` | none configured yet | Main AML analyst UI. WSO2 identity is planned later. |
+| Superset | `http://160.30.63.131:8088` | `admin` / `Asdf@1234` | Analytics dashboards and BI. Admin user is created from the app-layer compose startup command. |
+| n8n | `http://160.30.63.131:5678` | no static user/pass configured in compose | Workflow UI is live. No `N8N_BASIC_AUTH_*` settings are present in the deployed compose, so access is currently governed by n8n's own app bootstrap/session model rather than a shared static credential in env. |
+| Camunda | `http://160.30.63.131:8085/camunda/app/` | no explicit credential set in deployed env | BPMN workflow UI is live. The current compose file sets database connectivity only and does not define a custom app username/password. |
+| Neo4j Browser | `http://160.30.63.131:7474` | `neo4j` / `Asdf@1234` | Graph investigation and Cypher exploration UI. Bolt endpoint is `bolt://160.30.63.131:7687`. |
+| Attu | `http://160.30.63.131:8080` | no separate Attu login configured | Milvus admin UI. It connects to Milvus using `160.30.63.131:19530` or the internal service name `goaml-milvus:19530`. |
+| MinIO Console | `http://160.30.63.131:9001` | `minioadmin` / `Asdf@1234` | Object storage console used by Milvus and MLflow. S3 API endpoint is `http://160.30.63.131:9002`. |
+| MLflow | `http://160.30.63.131:5000` | none configured | Experiment tracking and model registry UI. No app-layer auth is configured in the current compose. |
+
 ## 4. Current Application Architecture
 
 ```mermaid
