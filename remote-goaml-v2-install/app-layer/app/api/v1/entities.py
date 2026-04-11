@@ -4,10 +4,18 @@ Entity profile and resolution API endpoints.
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
-from models.intelligence import EntityListItem, EntityProfileResponse, EntityResolutionRequest, WatchlistDashboardResponse
-from services.entities import get_entity_profile, list_entities, list_watchlist_entities, resolve_entity
+from models.intelligence import (
+    EntityListItem,
+    EntityProfileResponse,
+    EntityResolutionRequest,
+    WatchlistDashboardResponse,
+    WatchlistRescreenRequest,
+    WatchlistRescreenResponse,
+)
+from services.entities import get_entity_profile, list_entities, list_watchlist_entities, resolve_entity, run_watchlist_rescreen
+from services.screening import ScreeningUnavailableError
 
 router = APIRouter()
 
@@ -36,12 +44,43 @@ async def get_watchlist_dashboard(
     return WatchlistDashboardResponse(**row)
 
 
+@router.post("/entities/watchlist/rescreen", response_model=WatchlistRescreenResponse, summary="Run recurring re-screening across the watchlist")
+async def post_watchlist_rescreen(payload: WatchlistRescreenRequest):
+    try:
+        row = await run_watchlist_rescreen(
+            actor=payload.actor,
+            due_only=payload.due_only,
+            limit=payload.limit,
+            interval_days=payload.interval_days,
+        )
+    except ScreeningUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return WatchlistRescreenResponse(**row)
+
+
 @router.get("/entities/{entity_id}", response_model=EntityProfileResponse, summary="Get entity profile and resolution workspace")
 async def get_entity(entity_id: UUID):
     row = await get_entity_profile(entity_id)
     if not row:
         raise HTTPException(status_code=404, detail="Entity not found")
     return EntityProfileResponse(**row)
+
+
+@router.post("/entities/{entity_id}/rescreen", response_model=WatchlistRescreenResponse, summary="Run a watchlist re-screen for a single entity")
+async def post_entity_rescreen(entity_id: UUID, payload: WatchlistRescreenRequest):
+    try:
+        row = await run_watchlist_rescreen(
+            actor=payload.actor,
+            due_only=False,
+            limit=1,
+            interval_days=payload.interval_days,
+            entity_id=entity_id,
+        )
+    except ScreeningUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return WatchlistRescreenResponse(**row)
 
 
 @router.post("/entities/{entity_id}/resolve", response_model=EntityProfileResponse, summary="Apply an entity resolution action")

@@ -1,0 +1,76 @@
+[
+  {
+    "name": "goAML Watchlist Re-screen Weekly Full",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  0
+                ],
+                "triggerAtHour": 7,
+                "triggerAtMinute": 30
+              }
+            ]
+          }
+        },
+        "id": "2d6e54cb-7c1c-4ea5-ad0c-ef6fed24bb7c",
+        "name": "Weekly Full Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/entities/watchlist/rescreen",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"actor\":\"watchlist-automation\",\"due_only\":false,\"limit\":25}"
+        },
+        "id": "06fce1ca-f561-4338-97cd-1d29d9a3b6ea",
+        "name": "Run Full Re-screen Batch",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Weekly Full Schedule": {
+        "main": [
+          [
+            {
+              "node": "Run Full Re-screen Batch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "8a9f7042-d63c-4999-a07f-52ba6fe25545"
+  }
+]

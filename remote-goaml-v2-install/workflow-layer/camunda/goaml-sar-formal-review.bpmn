@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  id="Definitions_goamlSarFormalReview"
+  targetNamespace="https://goaml.local/camunda">
+  <bpmn:process id="goamlSarFormalReview" name="goAML SAR Formal Review" isExecutable="true" camunda:historyTimeToLive="45">
+    <bpmn:startEvent id="StartEvent_SarSubmitted" name="SAR Submitted">
+      <bpmn:outgoing>Flow_Start_Review</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_RegionalReview" name="Regional SAR Review" camunda:candidateGroups="${team}">
+      <bpmn:incoming>Flow_Start_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_ReviewDecision" name="Review Decision">
+      <bpmn:incoming>Flow_Review_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_Reject</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Review_Approve</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_RegulatoryFiling" name="Regulatory Filing" camunda:candidateGroups="aml-filing">
+      <bpmn:incoming>Flow_Review_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Filing_End</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Rejected">
+      <bpmn:incoming>Flow_Review_Reject</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_Filed" name="Filed">
+      <bpmn:incoming>Flow_Filing_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Review" sourceRef="StartEvent_SarSubmitted" targetRef="Task_RegionalReview" />
+    <bpmn:sequenceFlow id="Flow_Review_Gateway" sourceRef="Task_RegionalReview" targetRef="Gateway_ReviewDecision" />
+    <bpmn:sequenceFlow id="Flow_Review_Reject" sourceRef="Gateway_ReviewDecision" targetRef="EndEvent_Rejected">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewDecision == 'reject'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Review_Approve" sourceRef="Gateway_ReviewDecision" targetRef="Task_RegulatoryFiling">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewDecision == 'approve'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Filing_End" sourceRef="Task_RegulatoryFiling" targetRef="EndEvent_Filed" />
+  </bpmn:process>
+</bpmn:definitions>

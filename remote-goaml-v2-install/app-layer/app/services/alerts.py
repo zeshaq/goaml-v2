@@ -13,6 +13,7 @@ from core.database import get_pool
 from models.casework import AlertActionRequest, AlertInvestigateRequest, AlertStatusUpdate, CaseCreate
 from services.cases import create_case, get_case_detail
 from services.graph_sync import safe_resync_graph
+from services.routing import resolve_case_routing, routing_metadata_payload
 
 
 def _normalize_json_dict(value: Any) -> dict[str, Any]:
@@ -180,6 +181,15 @@ async def investigate_alert(alert_id: UUID, payload: AlertInvestigateRequest) ->
 
     async with pool.acquire() as conn:
         metadata = _normalize_json_dict(alert["metadata"])
+        routing = await resolve_case_routing(
+            conn,
+            workflow_type="alert_investigation",
+            alert_ids=[alert_id],
+            preferred_assignee=payload.assigned_to or alert["assigned_to"],
+            existing_metadata=metadata,
+        )
+        assigned_to = payload.assigned_to or routing.get("assigned_to") or alert["assigned_to"]
+        metadata["routing"] = routing_metadata_payload(routing, workflow_type="alert_investigation", source="alert_investigate")
         note_text = f"Investigation started by {payload.reviewed_by or payload.assigned_to or payload.created_by or 'analyst'}."
         metadata = _append_alert_note(
             metadata,
@@ -187,7 +197,7 @@ async def investigate_alert(alert_id: UUID, payload: AlertInvestigateRequest) ->
             actor=payload.reviewed_by or payload.assigned_to or payload.created_by,
             note=note_text,
             status="reviewing",
-            assigned_to=payload.assigned_to or alert["assigned_to"],
+            assigned_to=assigned_to,
         )
         await conn.execute(
             """
@@ -202,7 +212,7 @@ async def investigate_alert(alert_id: UUID, payload: AlertInvestigateRequest) ->
             WHERE id = $1
             """,
             alert_id,
-            payload.assigned_to,
+            assigned_to,
             payload.reviewed_by,
             json.dumps(metadata),
         )
@@ -274,8 +284,16 @@ async def run_alert_action(alert_id: UUID, payload: AlertActionRequest) -> dict[
                 return None
 
             current_status = current["status"]
-            assigned_to = payload.assigned_to or current["assigned_to"]
+            routing = await resolve_case_routing(
+                conn,
+                workflow_type="alert_investigation",
+                alert_ids=[alert_id],
+                preferred_assignee=payload.assigned_to or current["assigned_to"],
+                existing_metadata=current["metadata"],
+            )
+            assigned_to = payload.assigned_to or current["assigned_to"] or routing.get("assigned_to")
             metadata = _normalize_json_dict(current["metadata"])
+            metadata["routing"] = routing_metadata_payload(routing, workflow_type="alert_investigation", source=f"alert_{action}")
             linked_case_id = current["case_id"]
 
             if action == "add_note":

@@ -322,6 +322,9 @@ def build_entities(rng: random.Random) -> tuple[list[EntitySeed], dict[str, list
                 metadata={"seed_batch": SEED_TAG, "seed_category": "individual", "seed_index": index},
             )
             if is_pep or is_sanctioned:
+                last_screened_days_back = [22, 16, 12, 7][index % 4]
+                last_screened_at = utc_now() - timedelta(days=last_screened_days_back)
+                added_at = last_screened_at - timedelta(days=3)
                 entity.metadata["resolution_status"] = "watchlist_active"
                 entity.metadata["watchlist_state"] = {
                     "status": "active",
@@ -332,7 +335,14 @@ def build_entities(rng: random.Random) -> tuple[list[EntitySeed], dict[str, list
                         else "Seeded politically exposed person placed on enhanced due diligence watchlist."
                     ),
                     "added_by": "seed_engine",
-                    "added_at": utc_now().isoformat(),
+                    "added_at": added_at.isoformat(),
+                    "rescreen_interval_days": 14,
+                    "last_screened_at": last_screened_at.isoformat(),
+                    "last_screened_by": "seed_engine",
+                    "next_screening_due_at": (last_screened_at + timedelta(days=14)).isoformat(),
+                    "last_match_count": 2 if is_sanctioned else 1,
+                    "last_screening_trigger": "seed_initial",
+                    "last_datasets": ["OFAC SDN", "UN Sanctions"] if is_sanctioned else ["Internal PEP Review"],
                 }
             if is_pep:
                 traits["pep"].append(entity_id)
@@ -365,13 +375,23 @@ def build_entities(rng: random.Random) -> tuple[list[EntitySeed], dict[str, list
                 metadata={"seed_batch": SEED_TAG, "seed_category": "company", "seed_index": index},
             )
             if is_sanctioned:
+                last_screened_days_back = [24, 18, 11][index % 3]
+                last_screened_at = utc_now() - timedelta(days=last_screened_days_back)
+                added_at = last_screened_at - timedelta(days=5)
                 entity.metadata["resolution_status"] = "watchlist_active"
                 entity.metadata["watchlist_state"] = {
                     "status": "active",
                     "source": "external_screening",
                     "reason": "Seeded sanctioned company placed on watchlist review.",
                     "added_by": "seed_engine",
-                    "added_at": utc_now().isoformat(),
+                    "added_at": added_at.isoformat(),
+                    "rescreen_interval_days": 14,
+                    "last_screened_at": last_screened_at.isoformat(),
+                    "last_screened_by": "seed_engine",
+                    "next_screening_due_at": (last_screened_at + timedelta(days=14)).isoformat(),
+                    "last_match_count": 2,
+                    "last_screening_trigger": "seed_initial",
+                    "last_datasets": ["EU Sanctions", "BIS Entity List"],
                 }
             if is_shell:
                 traits["shell"].append(entity_id)
@@ -1051,6 +1071,8 @@ async def main() -> None:
     for index, case in enumerate(high_priority_cases):
         status = "filed" if index < 8 else "approved" if index < 12 else "pending_review"
         drafted_at = case["created_at"] + timedelta(hours=8)
+        submitted_for_review_at = drafted_at + timedelta(hours=3)
+        approved_at = drafted_at + timedelta(hours=6) if status in {"approved", "filed"} else None
         filed_at = drafted_at + timedelta(days=2) if status == "filed" else None
         sar_id = str(uuid4())
         narrative = (
@@ -1058,6 +1080,38 @@ async def main() -> None:
             f"elevated transaction risk, and adverse counterparties linked to {case['title'].lower()}. "
             f"Analysts reviewed related alerts, documents, and screening hits before escalating the matter."
         )
+        workflow_history = [
+            {
+                "action": "submit_review",
+                "actor": case["assigned_to"],
+                "note": "Seed SAR routed into reviewer queue.",
+                "created_at": submitted_for_review_at.isoformat(),
+                "status": "pending_review",
+            }
+        ]
+        latest_workflow_note = "Seed SAR routed into reviewer queue."
+        if approved_at:
+            workflow_history.append(
+                {
+                    "action": "approve",
+                    "actor": case["assigned_to"],
+                    "note": "Seed SAR approved in queue.",
+                    "created_at": approved_at.isoformat(),
+                    "status": "approved",
+                }
+            )
+            latest_workflow_note = "Seed SAR approved in queue."
+        if filed_at:
+            workflow_history.append(
+                {
+                    "action": "filed",
+                    "actor": case["assigned_to"],
+                    "note": f"FCN-SD-{index + 1:06d}",
+                    "created_at": filed_at.isoformat(),
+                    "status": "filed",
+                }
+            )
+            latest_workflow_note = "Seed SAR filed from approval queue."
         sars.append(
             (
                 sar_id,
@@ -1076,14 +1130,21 @@ async def main() -> None:
                 case["assigned_to"],
                 drafted_at,
                 case["assigned_to"] if status in {"approved", "filed"} else None,
-                drafted_at + timedelta(hours=6) if status in {"approved", "filed"} else None,
+                approved_at,
                 case["assigned_to"] if status == "filed" else None,
-                drafted_at + timedelta(hours=12) if status == "filed" else None,
+                approved_at if status == "filed" else None,
                 filed_at,
                 f"FCN-SD-{index + 1:06d}" if filed_at else None,
                 True,
                 settings.LLM_PRIMARY_MODEL,
-                jsonb({"seed_batch": SEED_TAG, "seed_case_ref": case["case_ref"]}),
+                jsonb(
+                    {
+                        "seed_batch": SEED_TAG,
+                        "seed_case_ref": case["case_ref"],
+                        "workflow_history": workflow_history,
+                        "latest_workflow_note": latest_workflow_note,
+                    }
+                ),
                 drafted_at,
                 utc_now(),
             )

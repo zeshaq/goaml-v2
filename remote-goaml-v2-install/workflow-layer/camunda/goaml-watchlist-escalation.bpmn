@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  id="Definitions_goamlWatchlistEscalation"
+  targetNamespace="https://goaml.local/camunda">
+  <bpmn:process id="goamlWatchlistEscalation" name="goAML Watchlist Escalation" isExecutable="true" camunda:historyTimeToLive="45">
+    <bpmn:startEvent id="StartEvent_WatchlistEscalated" name="Watchlist Escalated">
+      <bpmn:outgoing>Flow_Start_Triage</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_RegionalTriage" name="Regional Watchlist Triage" camunda:candidateGroups="${team}">
+      <bpmn:incoming>Flow_Start_Triage</bpmn:incoming>
+      <bpmn:outgoing>Flow_Triage_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_TriageDecision" name="Escalation Decision">
+      <bpmn:incoming>Flow_Triage_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Triage_Close</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Triage_Escalate</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_EnhancedInvestigation" name="Enhanced Investigation Escalation" camunda:candidateGroups="aml-escalations">
+      <bpmn:incoming>Flow_Triage_Escalate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Enhanced_End</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_Monitored" name="Monitored">
+      <bpmn:incoming>Flow_Triage_Close</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_Escalated" name="Escalated">
+      <bpmn:incoming>Flow_Enhanced_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Triage" sourceRef="StartEvent_WatchlistEscalated" targetRef="Task_RegionalTriage" />
+    <bpmn:sequenceFlow id="Flow_Triage_Gateway" sourceRef="Task_RegionalTriage" targetRef="Gateway_TriageDecision" />
+    <bpmn:sequenceFlow id="Flow_Triage_Close" sourceRef="Gateway_TriageDecision" targetRef="EndEvent_Monitored">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${escalationDecision == 'monitor' || escalationDecision == null}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Triage_Escalate" sourceRef="Gateway_TriageDecision" targetRef="Task_EnhancedInvestigation">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${escalationDecision == 'escalate'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Enhanced_End" sourceRef="Task_EnhancedInvestigation" targetRef="EndEvent_Escalated" />
+  </bpmn:process>
+</bpmn:definitions>

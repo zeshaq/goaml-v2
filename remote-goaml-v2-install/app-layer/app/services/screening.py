@@ -60,7 +60,7 @@ SCREENING_SAMPLE_QUERIES: dict[str, str] = {
 }
 
 
-async def screen_entity(payload: ScreenEntityRequest) -> list[dict[str, Any]]:
+async def screen_entity(payload: ScreenEntityRequest, *, resync_graph: bool = True) -> list[dict[str, Any]]:
     try:
         hits = await _query_yente(payload.entity_name, payload.limit)
     except Exception:
@@ -109,7 +109,7 @@ async def screen_entity(payload: ScreenEntityRequest) -> list[dict[str, Any]]:
                 payload.linked_txn_id,
             )
             results.append(_normalize_screening_row(dict(row)))
-    if results:
+    if results and resync_graph:
         await safe_resync_graph(clear_existing=True)
     return results
 

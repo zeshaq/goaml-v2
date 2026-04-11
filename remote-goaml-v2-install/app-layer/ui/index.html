@@ -218,6 +218,20 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
       Documents
     </div>
 
+    <div class="nav-section">Automation</div>
+    <div class="nav-item" onclick="showPage('workflow-ops')">
+      <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="17" cy="18" r="3"/></svg>
+      Workflow Ops
+    </div>
+    <div class="nav-item" onclick="showPage('n8n')">
+      <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 7h6l2 4h8"/><path d="M4 17h6l2-4h8"/><circle cx="4" cy="7" r="2"/><circle cx="4" cy="17" r="2"/><circle cx="20" cy="11" r="2"/></svg>
+      n8n Monitor
+    </div>
+    <div class="nav-item" onclick="showPage('camunda')">
+      <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 3h12v4H6z"/><path d="M12 7v5"/><path d="M6 14h12v7H6z"/></svg>
+      Camunda
+    </div>
+
     <div class="nav-section">Reports</div>
     <div class="nav-item">
       <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -475,6 +489,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
             <option value="filed">Filed History</option>
             <option value="all">All SARs</option>
           </select>
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--purple);color:var(--purple)" onclick="runSarQueueRebalance()">Run Rebalance</button>
           <button class="btn" style="font-size:12px;padding:6px 14px" onclick="loadSarQueue()">Refresh</button>
         </div>
       </div>
@@ -483,6 +498,20 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div class="metric"><div class="metric-val mono" style="color:var(--accent)" id="sar-queue-count-review">0</div><div class="metric-label">Pending Review</div></div>
         <div class="metric"><div class="metric-val mono" style="color:var(--purple)" id="sar-queue-count-approval">0</div><div class="metric-label">Approved</div></div>
         <div class="metric"><div class="metric-val mono" style="color:var(--green)" id="sar-queue-count-filed">0</div><div class="metric-label">Filed</div></div>
+      </div>
+      <div class="grid-2" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="metric"><div class="metric-val mono" style="color:var(--red)" id="sar-queue-overdue-count">0</div><div class="metric-label">Outside SLA</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--amber)" id="sar-queue-due-soon-count">0</div><div class="metric-label">Due Soon</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--cyan)" id="sar-queue-owner-count">0</div><div class="metric-label">Active Owners</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--text)" id="sar-queue-oldest-age">—</div><div class="metric-label">Oldest Selected Queue Age</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Queue Analytics & SLA View</div>
+        <div id="sar-queue-analytics-content" style="font-size:12px;color:var(--text3)">Load a queue to inspect reviewer workload, SLA exposure, and owner balance.</div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Workload Balancing Automation</div>
+        <div id="sar-queue-automation-content" style="font-size:12px;color:var(--text3)">Automated by n8n: daily SAR workload rebalance at 08:15 Asia/Dhaka using the live SLA queue analytics.</div>
       </div>
       <div class="stack-2">
         <div id="sar-queue-list"></div>
@@ -506,6 +535,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
             <option value="removed">Removed</option>
             <option value="all">All Watchlist States</option>
           </select>
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--purple);color:var(--purple)" onclick="runWatchlistBatchRescreen(true)">Run Due Re-screen</button>
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--cyan);color:var(--cyan)" onclick="runWatchlistBatchRescreen(false)">Run Full Active Batch</button>
           <button class="btn" style="font-size:12px;padding:6px 14px" onclick="loadWatchlistDashboard()">Refresh</button>
         </div>
       </div>
@@ -515,12 +546,127 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
         <div class="metric"><div class="metric-val mono" style="color:var(--red)" id="watchlist-count-critical">0</div><div class="metric-label">Critical Risk</div></div>
         <div class="metric"><div class="metric-val mono" style="color:var(--green)" id="watchlist-count-removed">0</div><div class="metric-label">Removed</div></div>
       </div>
+      <div class="grid-2" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="metric"><div class="metric-val mono" style="color:var(--amber)" id="watchlist-count-due">0</div><div class="metric-label">Due for Re-screen</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--text)" id="watchlist-count-due-soon">0</div><div class="metric-label">Due Soon</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--red)" id="watchlist-count-overdue">0</div><div class="metric-label">Overdue</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--cyan)" id="watchlist-count-screened-recent">0</div><div class="metric-label">Screened Last 7d</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Recurring Re-screen Automation</div>
+        <div id="watchlist-automation-content" style="font-size:12px;color:var(--text3)">Automated by n8n: daily due-only re-screen at 06:00 Asia/Dhaka and weekly full active watchlist sweep every Sunday at 07:30 Asia/Dhaka.</div>
+      </div>
       <div class="stack-2">
         <div id="watchlist-list"></div>
         <div class="card" id="watchlist-detail-panel">
           <div class="card-title">Watchlist Entity</div>
           <div id="watchlist-detail-content" class="case-detail-empty">Select a watchlist entity to inspect its active rationale, linked review case, and related investigation workload.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- WORKFLOW OPS PAGE -->
+    <div id="page-workflow-ops" class="page">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Workflow Operations</div>
+          <div style="font-size:12px;color:var(--text3)">SLA breach notification control, workload routing, and live automation posture</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--amber);color:var(--amber)" onclick="sendSlaNotifications()">Send SLA Notifications</button>
+          <button class="btn" style="font-size:12px;padding:6px 14px" onclick="loadWorkflowOps()">Refresh</button>
+        </div>
+      </div>
+      <div class="grid-2" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="metric"><div class="metric-val mono" style="color:var(--red)" id="workflow-breached-count">0</div><div class="metric-label">SAR Outside SLA</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--amber)" id="workflow-due-soon-count">0</div><div class="metric-label">SAR Due Soon</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--purple)" id="workflow-watchlist-case-count">0</div><div class="metric-label">Watchlist Open Cases</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--cyan)" id="workflow-camunda-task-count">0</div><div class="metric-label">Camunda Active Tasks</div></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-title">Notification Channels</div>
+          <div id="workflow-channel-status" style="font-size:12px;color:var(--text3)">Loading notification channel status...</div>
+          <div id="workflow-notification-feedback" style="font-size:12px;color:var(--text3);margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Routing and Workload</div>
+          <div id="workflow-owner-workload" style="font-size:12px;color:var(--text3)">Loading routed workload by analyst pod...</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Recent Notifications</div>
+          <div id="workflow-notification-log" style="font-size:12px;color:var(--text3)">Loading notification history...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Automation Summary</div>
+          <div id="workflow-summary-panel" style="font-size:12px;color:var(--text3)">Loading workflow automation summary...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- N8N PAGE -->
+    <div id="page-n8n" class="page">
+      <div class="section-header">
+        <div>
+          <div class="section-title">n8n Automation Monitor</div>
+          <div style="font-size:12px;color:var(--text3)">Live automation inventory, schedule visibility, and execution history for goAML workflows</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--cyan);color:var(--cyan)" onclick="openExternalUrl(latestN8nData?.public_url || 'http://160.30.63.131:5678')">Open n8n</button>
+          <button class="btn" style="font-size:12px;padding:6px 14px" onclick="loadN8nDashboard()">Refresh</button>
+        </div>
+      </div>
+      <div class="grid-2" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="metric"><div class="metric-val mono" style="color:var(--accent)" id="n8n-workflow-count">0</div><div class="metric-label">goAML Workflows</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--green)" id="n8n-active-count">0</div><div class="metric-label">Active</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--amber)" id="n8n-running-count">0</div><div class="metric-label">Running Executions</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--purple)" id="n8n-history-count">0</div><div class="metric-label">Execution History</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Workflow Inventory</div>
+          <div id="n8n-workflow-list" style="font-size:12px;color:var(--text3)">Loading n8n workflow inventory...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Recent Executions</div>
+          <div id="n8n-execution-list" style="font-size:12px;color:var(--text3)">Loading n8n execution history...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAMUNDA PAGE -->
+    <div id="page-camunda" class="page">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Camunda Orchestration</div>
+          <div style="font-size:12px;color:var(--text3)">Formal SAR review and watchlist escalation flows tracked against live goAML cases</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--cyan);color:var(--cyan)" onclick="openExternalUrl(latestCamundaData?.public_url || 'http://160.30.63.131:8085/camunda/app/')">Open Camunda</button>
+          <button class="btn" style="font-size:12px;padding:6px 14px" onclick="loadCamundaDashboard()">Refresh</button>
+        </div>
+      </div>
+      <div class="grid-2" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="metric"><div class="metric-val mono" style="color:var(--accent)" id="camunda-definition-count">0</div><div class="metric-label">Definitions</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--red)" id="camunda-task-count">0</div><div class="metric-label">Active Tasks</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--amber)" id="camunda-instance-count">0</div><div class="metric-label">Active Instances</div></div>
+        <div class="metric"><div class="metric-val mono" style="color:var(--purple)" id="camunda-tracked-count">0</div><div class="metric-label">Tracked Case Flows</div></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-title">Definitions and Tasks</div>
+          <div id="camunda-definition-list" style="font-size:12px;color:var(--text3)">Loading Camunda process definitions...</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Tracked goAML Processes</div>
+          <div id="camunda-process-list" style="font-size:12px;color:var(--text3)">Loading case-linked orchestration runs...</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Live Task Queue</div>
+        <div id="camunda-task-list" style="font-size:12px;color:var(--text3)">Loading Camunda task queue...</div>
       </div>
     </div>
 
@@ -650,6 +796,9 @@ function showPage(id) {
   items.forEach(item=>{if(item.getAttribute('onclick')&&item.getAttribute('onclick').includes(id))item.classList.add('active')});
   if (id === 'sar-queue') loadSarQueue();
   if (id === 'watchlist') loadWatchlistDashboard();
+  if (id === 'workflow-ops') loadWorkflowOps();
+  if (id === 'n8n') loadN8nDashboard();
+  if (id === 'camunda') loadCamundaDashboard();
 }
 
 // Volume chart
@@ -816,6 +965,11 @@ let activeTransactionGraphNodeId = null;
 let latestEntityGraphDrilldown = null;
 let latestEntityGraphPathData = null;
 let activeEntityGraphNodeId = null;
+let latestSarRebalanceRun = null;
+let latestWatchlistRescreenRun = null;
+let latestWorkflowOverview = null;
+let latestN8nData = null;
+let latestCamundaData = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -828,9 +982,10 @@ function escapeHtml(value) {
 
 function badgeClassByState(value) {
   const v = String(value || '').toLowerCase();
-  if (['high', 'critical', 'open'].includes(v)) return 'badge-red';
-  if (['medium', 'reviewing', 'pending_sar'].includes(v)) return 'badge-amber';
-  if (['closed', 'false_positive', 'ok'].includes(v)) return 'badge-green';
+  if (['high', 'critical', 'open', 'breached', 'overdue', 'escalated'].includes(v)) return 'badge-red';
+  if (['medium', 'reviewing', 'pending_sar', 'due_soon', 'pending_review'].includes(v)) return 'badge-amber';
+  if (['closed', 'false_positive', 'ok', 'within_sla', 'current', 'active', 'removed'].includes(v)) return 'badge-green';
+  if (['approved', 'sar_filed'].includes(v)) return 'badge-purple';
   return 'badge-blue';
 }
 
@@ -838,6 +993,19 @@ function riskColor(score) {
   if (score >= 0.75) return 'var(--red)';
   if (score >= 0.45) return 'var(--amber)';
   return 'var(--accent)';
+}
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
+}
+
+function formatHours(value) {
+  const hours = Number(value);
+  if (!Number.isFinite(hours)) return '—';
+  if (hours >= 24) return `${(hours / 24).toFixed(hours >= 72 ? 0 : 1)}d`;
+  return `${hours.toFixed(hours >= 10 ? 0 : 1)}h`;
 }
 
 function timelineDotColor(type) {
@@ -1493,6 +1661,11 @@ async function apiJson(path, options) {
   return res.json();
 }
 
+function openExternalUrl(url) {
+  if (!url) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function loadTransactions() {
   const tbody = document.getElementById('txn-table');
   const summary = document.getElementById('txn-summary');
@@ -1697,12 +1870,16 @@ async function loadCases() {
 
 async function loadSarQueue(queue = null) {
   const select = document.getElementById('sar-queue-filter');
+  const automationPanel = document.getElementById('sar-queue-automation-content');
   if (queue) activeSarQueue = queue;
   else if (select?.value) activeSarQueue = select.value;
   if (select && select.value !== activeSarQueue) select.value = activeSarQueue;
   const list = document.getElementById('sar-queue-list');
+  const analyticsPanel = document.getElementById('sar-queue-analytics-content');
   if (!list) return null;
   list.innerHTML = '<div class="card card-sm">Loading SAR queue...</div>';
+  if (analyticsPanel) analyticsPanel.innerHTML = '<div style="color:var(--text3)">Loading queue analytics...</div>';
+  if (automationPanel) automationPanel.innerHTML = renderSarRebalanceSummary(latestSarRebalanceRun);
   try {
     const data = await apiGet(`/sars/queue?queue=${encodeURIComponent(activeSarQueue)}&limit=40`);
     latestSarQueueData = data;
@@ -1710,6 +1887,13 @@ async function loadSarQueue(queue = null) {
     document.getElementById('sar-queue-count-review').textContent = data.counts?.review ?? 0;
     document.getElementById('sar-queue-count-approval').textContent = data.counts?.approval ?? 0;
     document.getElementById('sar-queue-count-filed').textContent = data.counts?.filed ?? 0;
+    document.getElementById('sar-queue-overdue-count').textContent = data.analytics?.overall_breached_count ?? 0;
+    document.getElementById('sar-queue-due-soon-count').textContent = data.analytics?.overall_due_soon_count ?? 0;
+    document.getElementById('sar-queue-owner-count').textContent = data.analytics?.active_owner_count ?? 0;
+    const queueMetric = (data.analytics?.queue_sla || []).find((item) => item.queue === activeSarQueue);
+    document.getElementById('sar-queue-oldest-age').textContent = formatHours(queueMetric?.oldest_age_hours);
+    if (analyticsPanel) analyticsPanel.innerHTML = renderSarQueueAnalytics(data.analytics, activeSarQueue);
+    if (automationPanel) automationPanel.innerHTML = renderSarRebalanceSummary(latestSarRebalanceRun);
     if (!data.items?.length) {
       list.innerHTML = '<div class="card card-sm">No SAR items found for this queue.</div>';
       renderSarQueueDetailEmpty('No SAR queue item selected.');
@@ -1723,13 +1907,15 @@ async function loadSarQueue(queue = null) {
             <span class="mono" style="font-size:11px;color:var(--text3)">${escapeHtml(item.sar_ref)}</span>
             <span class="badge ${badgeClassByState(item.case_priority)}">${escapeHtml(String(item.case_priority || '').toUpperCase())}</span>
             <span class="badge ${badgeClassByState(item.sar_status)}">${escapeHtml(String(item.sar_status || '').replaceAll('_', ' ').toUpperCase())}</span>
+            ${item.sla_status ? `<span class="badge ${badgeClassByState(item.sla_status)}">${escapeHtml(String(item.sla_status).replaceAll('_', ' ').toUpperCase())}</span>` : ''}
           </div>
           <div style="font-size:14px;font-weight:500;margin-bottom:4px">${escapeHtml(item.case_title)}</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Subject: ${escapeHtml(item.subject_name || '—')} · Assigned: ${escapeHtml(item.assigned_to || 'Unassigned')}</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Subject: ${escapeHtml(item.subject_name || '—')} · Owner: ${escapeHtml(item.queue_owner || item.assigned_to || 'Unassigned')}</div>
           <div style="display:flex;gap:14px;font-size:12px;color:var(--text3);flex-wrap:wrap">
             <span>Alerts: <span style="color:var(--text2)">${item.alert_count || 0}</span></span>
             <span>Transactions: <span style="color:var(--text2)">${item.transaction_count || 0}</span></span>
             <span>Workflow steps: <span style="color:var(--text2)">${item.workflow_step_count || 0}</span></span>
+            <span>Age: <span style="color:var(--text2)">${escapeHtml(formatHours(item.age_hours))}</span></span>
           </div>
           ${item.latest_workflow_note ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">${escapeHtml(item.latest_workflow_note)}</div>` : ''}
         </div>
@@ -1743,8 +1929,31 @@ async function loadSarQueue(queue = null) {
     return data;
   } catch (err) {
     list.innerHTML = '<div class="card card-sm" style="color:var(--red)">Could not load the SAR queue.</div>';
+    if (analyticsPanel) analyticsPanel.innerHTML = '<div style="color:var(--red)">Could not load queue analytics.</div>';
+    if (automationPanel) automationPanel.innerHTML = '<div style="color:var(--red)">Could not load workload balancing automation status.</div>';
     renderSarQueueDetailEmpty('Could not load SAR queue detail.');
     return null;
+  }
+}
+
+async function runSarQueueRebalance() {
+  const panel = document.getElementById('sar-queue-automation-content');
+  if (panel) panel.innerHTML = '<div style="color:var(--text3)">Running workload rebalance...</div>';
+  try {
+    latestSarRebalanceRun = await apiJson('/sars/queue/rebalance', {
+      method: 'POST',
+      body: JSON.stringify({
+        actor: 'sar-queue-automation',
+        queue: activeSarQueue === 'filed' ? 'all' : activeSarQueue,
+        limit: 8,
+        breached_only: true,
+        include_due_soon: true
+      })
+    });
+    if (panel) panel.innerHTML = renderSarRebalanceSummary(latestSarRebalanceRun);
+    await loadSarQueue(activeSarQueue);
+  } catch (err) {
+    if (panel) panel.innerHTML = `<div style="color:var(--red)">${escapeHtml(err.message || 'Could not rebalance the SAR queue.')}</div>`;
   }
 }
 
@@ -1820,8 +2029,10 @@ async function loadWatchlistDashboard(status = null) {
   else if (select?.value) activeWatchlistStatus = select.value;
   if (select && select.value !== activeWatchlistStatus) select.value = activeWatchlistStatus;
   const list = document.getElementById('watchlist-list');
+  const automationPanel = document.getElementById('watchlist-automation-content');
   if (!list) return null;
   list.innerHTML = '<div class="card card-sm">Loading watchlist dashboard...</div>';
+  if (automationPanel) automationPanel.innerHTML = renderWatchlistRescreenSummary(latestWatchlistRescreenRun);
   try {
     const data = await apiGet(`/entities/watchlist?status=${encodeURIComponent(activeWatchlistStatus)}&limit=40`);
     latestWatchlistData = data;
@@ -1829,6 +2040,11 @@ async function loadWatchlistDashboard(status = null) {
     document.getElementById('watchlist-count-open-case').textContent = data.counts?.with_open_case ?? 0;
     document.getElementById('watchlist-count-critical').textContent = data.counts?.critical ?? 0;
     document.getElementById('watchlist-count-removed').textContent = data.counts?.removed ?? 0;
+    document.getElementById('watchlist-count-due').textContent = data.counts?.due_for_rescreen ?? 0;
+    document.getElementById('watchlist-count-due-soon').textContent = data.counts?.due_soon_rescreen ?? 0;
+    document.getElementById('watchlist-count-overdue').textContent = data.counts?.overdue_rescreen ?? 0;
+    document.getElementById('watchlist-count-screened-recent').textContent = data.counts?.screened_last_7d ?? 0;
+    if (automationPanel) automationPanel.innerHTML = renderWatchlistRescreenSummary(latestWatchlistRescreenRun);
     if (!data.items?.length) {
       list.innerHTML = '<div class="card card-sm">No watchlist entities found for this view.</div>';
       renderWatchlistDetailEmpty('No watchlist entity selected.');
@@ -1842,6 +2058,7 @@ async function loadWatchlistDashboard(status = null) {
             <span class="badge ${nodeTypeBadge('entity')}">${escapeHtml(String(item.entity_type || 'entity').replaceAll('_', ' '))}</span>
             <span class="badge ${badgeClassByState(item.risk_level)}">${escapeHtml(String(item.risk_level || 'unknown').toUpperCase())}</span>
             ${item.watchlist_status === 'active' ? '<span class="badge badge-purple">ACTIVE</span>' : '<span class="badge badge-green">REMOVED</span>'}
+            ${item.rescreen_status ? `<span class="badge ${badgeClassByState(item.rescreen_status)}">${escapeHtml(String(item.rescreen_status).replaceAll('_', ' ').toUpperCase())}</span>` : ''}
           </div>
           <div style="font-size:14px;font-weight:500;margin-bottom:4px">${escapeHtml(item.name)}</div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${escapeHtml(item.watchlist_reason || 'No watchlist reason recorded.')} </div>
@@ -1849,7 +2066,8 @@ async function loadWatchlistDashboard(status = null) {
             <span>Cases: <span style="color:var(--text2)">${item.linked_case_count || 0}</span></span>
             <span>Accounts: <span style="color:var(--text2)">${item.linked_account_count || 0}</span></span>
             <span>Screening: <span style="color:var(--text2)">${item.screening_hit_count || 0}</span></span>
-            <span>Case ref: <span class="mono" style="color:var(--text2)">${escapeHtml(item.case_ref || '—')}</span></span>
+            <span>Last matches: <span style="color:var(--text2)">${item.last_match_count || 0}</span></span>
+            <span>Next due: <span class="mono" style="color:var(--text2)">${escapeHtml(formatDateTime(item.next_screening_due_at))}</span></span>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
@@ -1865,6 +2083,7 @@ async function loadWatchlistDashboard(status = null) {
     return data;
   } catch (err) {
     list.innerHTML = '<div class="card card-sm" style="color:var(--red)">Could not load the watchlist dashboard.</div>';
+    if (automationPanel) automationPanel.innerHTML = '<div style="color:var(--red)">Could not load recurring watchlist automation status.</div>';
     renderWatchlistDetailEmpty('Could not load watchlist detail.');
     return null;
   }
@@ -1894,11 +2113,12 @@ async function runWatchlistAction(action) {
     feedback.textContent = 'Applying watchlist action...';
   }
   try {
+    const actor = document.getElementById('watchlist-actor-input')?.value?.trim() || 'analyst1';
     const profile = await apiJson(`/entities/${activeWatchlistEntityId}/resolve`, {
       method: 'POST',
       body: JSON.stringify({
         action,
-        actor: 'analyst1',
+        actor,
         note: document.getElementById('watchlist-note-input')?.value?.trim() || null,
       })
     });
@@ -1914,6 +2134,59 @@ async function runWatchlistAction(action) {
     if (feedback) {
       feedback.style.color = 'var(--red)';
       feedback.textContent = err.message || 'Could not update the watchlist entity.';
+    }
+  }
+}
+
+async function runWatchlistBatchRescreen(dueOnly = true) {
+  const panel = document.getElementById('watchlist-automation-content');
+  if (panel) panel.innerHTML = '<div style="color:var(--text3)">Running watchlist re-screen batch...</div>';
+  try {
+    latestWatchlistRescreenRun = await apiJson('/entities/watchlist/rescreen', {
+      method: 'POST',
+      body: JSON.stringify({
+        actor: 'watchlist-automation',
+        due_only: !!dueOnly,
+        limit: 25,
+      })
+    });
+    if (panel) panel.innerHTML = renderWatchlistRescreenSummary(latestWatchlistRescreenRun);
+    await loadWatchlistDashboard(activeWatchlistStatus);
+    if (activeWatchlistEntityId) await selectWatchlistEntity(activeWatchlistEntityId);
+  } catch (err) {
+    if (panel) panel.innerHTML = `<div style="color:var(--red)">${escapeHtml(err.message || 'Could not run the watchlist re-screen batch.')}</div>`;
+  }
+}
+
+async function runWatchlistEntityRescreen() {
+  if (!activeWatchlistEntityId) return;
+  const feedback = document.getElementById('watchlist-action-feedback');
+  if (feedback) {
+    feedback.style.color = 'var(--text3)';
+    feedback.textContent = 'Running entity re-screen...';
+  }
+  try {
+    const actor = document.getElementById('watchlist-actor-input')?.value?.trim() || 'analyst1';
+    latestWatchlistRescreenRun = await apiJson(`/entities/${activeWatchlistEntityId}/rescreen`, {
+      method: 'POST',
+      body: JSON.stringify({
+        actor,
+        due_only: false,
+        limit: 1,
+      })
+    });
+    if (feedback) {
+      feedback.style.color = 'var(--green)';
+      feedback.textContent = 'Entity re-screen completed.';
+    }
+    const panel = document.getElementById('watchlist-automation-content');
+    if (panel) panel.innerHTML = renderWatchlistRescreenSummary(latestWatchlistRescreenRun);
+    await loadWatchlistDashboard(activeWatchlistStatus);
+    await selectWatchlistEntity(activeWatchlistEntityId);
+  } catch (err) {
+    if (feedback) {
+      feedback.style.color = 'var(--red)';
+      feedback.textContent = err.message || 'Could not re-screen the selected entity.';
     }
   }
 }
@@ -1959,6 +2232,346 @@ function renderWatchlistDetailEmpty(message) {
   panel.innerHTML = escapeHtml(message);
 }
 
+function renderSarQueueAnalytics(analytics, queue) {
+  if (!analytics) {
+    return '<div style="color:var(--text3)">Queue analytics are not available yet.</div>';
+  }
+  const queueMetric = (analytics.queue_sla || []).find((item) => item.queue === queue) || null;
+  const topOwners = (analytics.owner_workloads || []).slice(0, 5);
+  return `<div class="grid-2">
+    <div class="card" style="background:var(--bg3)">
+      <div class="card-title">Selected Queue SLA</div>
+      ${queueMetric ? `
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Queue: <span style="color:var(--text)">${escapeHtml(queueMetric.label)}</span></div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">SLA target: <span style="color:var(--text)">${formatHours(queueMetric.sla_hours)}</span></div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Average age: <span style="color:var(--text)">${formatHours(queueMetric.avg_age_hours)}</span></div>
+        <div style="font-size:12px;color:var(--text2)">Oldest item: <span style="color:var(--text)">${formatHours(queueMetric.oldest_age_hours)}</span></div>
+      ` : '<div style="font-size:12px;color:var(--text3)">No SLA metric available for this queue.</div>'}
+    </div>
+    <div class="card" style="background:var(--bg3)">
+      <div class="card-title">Reviewer / Approver Workload</div>
+      ${topOwners.length ? topOwners.map((item) => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.display_name || item.owner || 'Unassigned')}</div>
+          <div style="font-size:11px;color:var(--text3)">Draft ${item.draft_count || 0} · Review ${item.review_count || 0} · Approval ${item.approval_count || 0}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:${(item.breached_count || 0) > 0 ? 'var(--red)' : 'var(--text2)'}">${item.breached_count || 0} breached</div>
+          <div style="font-size:11px;color:var(--text3)">Oldest ${formatHours(item.oldest_age_hours)}</div>
+        </div>
+      </div>`).join('') : '<div style="font-size:12px;color:var(--text3)">No owner workload records available.</div>'}
+    </div>
+  </div>
+  ${analytics.summary?.length ? `<div style="font-size:12px;color:var(--text2);margin-top:10px">${analytics.summary.map((line) => escapeHtml(line)).join(' · ')}</div>` : ''}`;
+}
+
+function renderSarRebalanceSummary(runData) {
+  if (!runData) {
+    return 'Automated by n8n: daily SAR workload rebalance at 08:15 Asia/Dhaka using the live SLA queue analytics.';
+  }
+  return `<div style="font-size:12px;color:var(--text2);margin-bottom:8px">${escapeHtml(runData.summary?.join(' ') || 'SAR workload rebalance completed.')}</div>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text3);margin-bottom:8px">
+    <span>Queue: <span style="color:var(--text)">${escapeHtml(runData.queue || 'all')}</span></span>
+    <span>Eligible: <span style="color:var(--text)">${runData.processed_count || 0}</span></span>
+    <span>Reassigned: <span style="color:var(--text)">${runData.reassigned_count || 0}</span></span>
+    <span>Owners: <span style="color:var(--text)">${runData.owner_count || 0}</span></span>
+  </div>
+  ${(runData.items || []).length ? runData.items.slice(0, 6).map((item) => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)">
+    <div>
+      <div style="font-size:12px;color:var(--text)">${escapeHtml(item.case_ref || item.sar_ref)}</div>
+      <div style="font-size:11px;color:var(--text3)">Moved ${escapeHtml(item.previous_owner || 'unassigned')} -> ${escapeHtml(item.new_owner || '—')} · Queue ${escapeHtml(String(item.queue || '').toUpperCase())}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:var(--text3)">
+      <div>${item.sla_status ? `<span class="badge ${badgeClassByState(item.sla_status)}">${escapeHtml(String(item.sla_status).replaceAll('_', ' ').toUpperCase())}</span>` : ''}</div>
+      <div style="margin-top:4px">${escapeHtml(item.case_priority || '—')}</div>
+    </div>
+  </div>`).join('') : '<div style="font-size:12px;color:var(--text3)">No items needed reassignment in the most recent run.</div>'}`;
+}
+
+function renderWatchlistRescreenSummary(runData) {
+  if (!runData) {
+    return 'Automated by n8n: daily due-only re-screen at 06:00 Asia/Dhaka and weekly full active watchlist sweep every Sunday at 07:30 Asia/Dhaka.';
+  }
+  return `<div style="font-size:12px;color:var(--text2);margin-bottom:8px">${escapeHtml(runData.summary?.join(' ') || 'Watchlist re-screen run completed.')}</div>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text3);margin-bottom:8px">
+    <span>Scope: <span style="color:var(--text)">${escapeHtml(runData.scope || 'unknown')}</span></span>
+    <span>Processed: <span style="color:var(--text)">${runData.processed_count || 0}</span></span>
+    <span>Matched: <span style="color:var(--text)">${runData.matched_count || 0}</span></span>
+    <span>New match entities: <span style="color:var(--text)">${runData.new_match_entity_count || 0}</span></span>
+    <span>Auto-escalated: <span style="color:var(--text)">${runData.escalated_case_count || 0}</span></span>
+  </div>
+  ${(runData.items || []).length ? runData.items.slice(0, 6).map((item) => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)">
+    <div>
+      <div style="font-size:12px;color:var(--text)">${escapeHtml(item.name || item.entity_id)}</div>
+      <div style="font-size:11px;color:var(--text3)">Matches ${item.match_count || 0} · New ${item.new_matches || 0} · Next due ${escapeHtml(formatDateTime(item.next_screening_due_at))}${item.auto_escalated ? ' · Auto-escalated' : ''}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:var(--text3)">
+      <div><span class="badge ${badgeClassByState(item.rescreen_status)}">${escapeHtml(String(item.rescreen_status || 'current').replaceAll('_', ' ').toUpperCase())}</span></div>
+      <div style="margin-top:4px">${escapeHtml(item.case_ref || 'No case')}</div>
+    </div>
+  </div>`).join('') : '<div style="font-size:12px;color:var(--text3)">No entities were processed in the most recent run.</div>'}`;
+}
+
+function renderChannelStatus(channelStatus) {
+  if (!channelStatus) {
+    return '<div style="font-size:12px;color:var(--text3)">Channel status unavailable.</div>';
+  }
+  return Object.entries(channelStatus).map(([channel, info]) => `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border)">
+      <div>
+        <div style="font-size:12px;color:var(--text)">${escapeHtml(String(channel).toUpperCase())}</div>
+        <div style="font-size:11px;color:var(--text3)">Mode: ${escapeHtml(info.mode || 'unknown')}</div>
+      </div>
+      <span class="badge ${info.configured ? 'badge-green' : 'badge-amber'}">${info.configured ? 'CONFIGURED' : 'PENDING CONFIG'}</span>
+    </div>
+  `).join('');
+}
+
+function renderWorkflowOwnerWorkload(items) {
+  if (!items?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No routed workload data yet.</div>';
+  }
+  return items.slice(0, 8).map((item) => `
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)">
+      <div>
+        <div style="font-size:12px;color:var(--text)">${escapeHtml(item.owner || 'unassigned')}</div>
+        <div style="font-size:11px;color:var(--text3)">${escapeHtml(item.team_label || 'Global AML Operations')}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:${(item.breached_count || 0) > 0 ? 'var(--red)' : 'var(--text2)'}">${item.item_count || 0} active · ${(item.breached_count || 0)} breached</div>
+        <div style="font-size:11px;color:var(--text3)">${(item.due_soon_count || 0)} due soon</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderWorkflowNotifications(items) {
+  if (!items?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No notification history recorded yet.</div>';
+  }
+  return items.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.subject || item.notification_type)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(item.channel || 'channel')} · ${escapeHtml(item.team_key || 'global')} · ${escapeHtml(formatDateTime(item.created_at))}</div>
+        </div>
+        <span class="badge ${badgeClassByState(item.status)}">${escapeHtml(String(item.status || 'queued').replaceAll('_', ' ').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderWorkflowSummaryPanel(data) {
+  if (!data) {
+    return '<div style="font-size:12px;color:var(--text3)">Workflow summary unavailable.</div>';
+  }
+  return `
+    <div style="display:grid;gap:8px">
+      ${(data.summary || []).map((line) => `<div style="font-size:12px;color:var(--text2)">${escapeHtml(line)}</div>`).join('')}
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:var(--text3)">
+      n8n active workflows: ${data.n8n?.counts?.active_workflow_count ?? 0} · Camunda tracked processes: ${data.camunda?.counts?.tracked_process_count ?? 0}
+    </div>
+  `;
+}
+
+async function loadWorkflowOps() {
+  const feedback = document.getElementById('workflow-notification-feedback');
+  try {
+    const data = await apiGet('/workflow/overview');
+    latestWorkflowOverview = data;
+    document.getElementById('workflow-breached-count').textContent = data.counts?.sar_breached ?? 0;
+    document.getElementById('workflow-due-soon-count').textContent = data.counts?.sar_due_soon ?? 0;
+    document.getElementById('workflow-watchlist-case-count').textContent = data.counts?.watchlist_open_cases ?? 0;
+    document.getElementById('workflow-camunda-task-count').textContent = data.counts?.camunda_active_tasks ?? 0;
+    document.getElementById('workflow-channel-status').innerHTML = renderChannelStatus(data.channel_status);
+    document.getElementById('workflow-owner-workload').innerHTML = renderWorkflowOwnerWorkload(data.owner_workload);
+    document.getElementById('workflow-notification-log').innerHTML = renderWorkflowNotifications(data.recent_notifications);
+    document.getElementById('workflow-summary-panel').innerHTML = renderWorkflowSummaryPanel(data);
+    if (feedback) {
+      feedback.style.color = 'var(--text3)';
+      feedback.textContent = 'Live automation state loaded from the backend orchestration layer.';
+    }
+    return data;
+  } catch (err) {
+    if (feedback) {
+      feedback.style.color = 'var(--red)';
+      feedback.textContent = err.message || 'Could not load workflow operations.';
+    }
+    return null;
+  }
+}
+
+async function sendSlaNotifications() {
+  const feedback = document.getElementById('workflow-notification-feedback');
+  if (feedback) {
+    feedback.style.color = 'var(--text3)';
+    feedback.textContent = 'Dispatching SLA notifications...';
+  }
+  try {
+    const result = await apiJson('/workflow/sla/notify', {
+      method: 'POST',
+      body: JSON.stringify({
+        triggered_by: 'ui-operations',
+        channels: ['slack', 'email'],
+        breached_only: true,
+        include_due_soon: true
+      })
+    });
+    if (feedback) {
+      feedback.style.color = 'var(--green)';
+      feedback.textContent = (result.summary || []).join(' ') || 'SLA notifications dispatched.';
+    }
+    await loadWorkflowOps();
+  } catch (err) {
+    if (feedback) {
+      feedback.style.color = 'var(--red)';
+      feedback.textContent = err.message || 'Could not dispatch SLA notifications.';
+    }
+  }
+}
+
+function renderN8nWorkflowList(data) {
+  if (!data?.workflows?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No goAML n8n workflows found.</div>';
+  }
+  return data.workflows.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.name)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Trigger count ${item.trigger_count || 0} · Success ${item.success_count || 0} · Errors ${item.error_count || 0}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge ${item.active ? 'badge-green' : 'badge-amber'}">${item.active ? 'ACTIVE' : 'PAUSED'}</span>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(item.last_execution_status || 'no executions yet')}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderN8nExecutionList(data) {
+  if (!data?.recent_executions?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No recent n8n executions recorded yet.</div>';
+  }
+  return data.recent_executions.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.name)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(formatDateTime(item.started_at))} · ${escapeHtml(item.mode || 'workflow')}</div>
+        </div>
+        <span class="badge ${badgeClassByState(item.status)}">${escapeHtml(String(item.status || 'unknown').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadN8nDashboard() {
+  try {
+    const data = await apiGet('/workflow/n8n');
+    latestN8nData = data;
+    document.getElementById('n8n-workflow-count').textContent = data.counts?.workflow_count ?? 0;
+    document.getElementById('n8n-active-count').textContent = data.counts?.active_workflow_count ?? 0;
+    document.getElementById('n8n-running-count').textContent = data.counts?.running_execution_count ?? 0;
+    document.getElementById('n8n-history-count').textContent = data.counts?.execution_history_count ?? 0;
+    document.getElementById('n8n-workflow-list').innerHTML = renderN8nWorkflowList(data);
+    document.getElementById('n8n-execution-list').innerHTML = renderN8nExecutionList(data);
+    return data;
+  } catch (err) {
+    document.getElementById('n8n-workflow-list').innerHTML = `<div style="color:var(--red)">${escapeHtml(err.message || 'Could not load n8n workflows.')}</div>`;
+    document.getElementById('n8n-execution-list').innerHTML = '<div style="color:var(--text3)">No execution data available.</div>';
+    return null;
+  }
+}
+
+function renderCamundaDefinitions(data) {
+  const definitions = Array.isArray(data?.definitions) ? data.definitions : [];
+  const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+  if (!definitions.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No Camunda process definitions available.</div>';
+  }
+  return definitions.map((item) => {
+    const openTaskCount = tasks.filter((task) => task.process_definition_id === item.id).length;
+    return `
+      <div style="padding:8px 0;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+          <div>
+            <div style="font-size:12px;color:var(--text)">${escapeHtml(item.name || item.key)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Key ${escapeHtml(item.key)} · Version ${item.version}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="badge ${item.suspended ? 'badge-red' : 'badge-green'}">${item.suspended ? 'SUSPENDED' : 'DEPLOYED'}</span>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">${openTaskCount} open tasks</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCamundaTrackedProcesses(data) {
+  if (!data?.tracked_processes?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No goAML-linked Camunda processes are being tracked yet.</div>';
+  }
+  return data.tracked_processes.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.workflow_label || item.workflow_key)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(item.business_key || '—')} · ${escapeHtml(item.team_label || 'Global AML Operations')}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge ${badgeClassByState(item.status)}">${escapeHtml(String(item.status || 'active').replaceAll('_', ' ').toUpperCase())}</span>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(item.current_task_name || 'No pending task')}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderCamundaTasks(data) {
+  if (!data?.tasks?.length) {
+    return '<div style="font-size:12px;color:var(--text3)">No active Camunda tasks right now.</div>';
+  }
+  return data.tasks.map((item) => `
+    <div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text)">${escapeHtml(item.name || 'Task')}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(item.business_key || item.process_instance_id || 'instance')} · ${escapeHtml(item.team_label || 'unrouted')}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--text2)">Priority ${item.priority ?? '—'}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${escapeHtml(formatDateTime(item.created))}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadCamundaDashboard() {
+  try {
+    const data = await apiGet('/workflow/camunda');
+    latestCamundaData = data;
+    document.getElementById('camunda-definition-count').textContent = data.counts?.definition_count ?? 0;
+    document.getElementById('camunda-task-count').textContent = data.counts?.active_task_count ?? 0;
+    document.getElementById('camunda-instance-count').textContent = data.counts?.active_instance_count ?? 0;
+    document.getElementById('camunda-tracked-count').textContent = data.counts?.tracked_process_count ?? 0;
+    document.getElementById('camunda-definition-list').innerHTML = renderCamundaDefinitions(data);
+    document.getElementById('camunda-process-list').innerHTML = renderCamundaTrackedProcesses(data);
+    document.getElementById('camunda-task-list').innerHTML = renderCamundaTasks(data);
+    return data;
+  } catch (err) {
+    document.getElementById('camunda-definition-list').innerHTML = `<div style="color:var(--red)">${escapeHtml(err.message || 'Could not load Camunda.')}</div>`;
+    document.getElementById('camunda-process-list').innerHTML = '<div style="color:var(--text3)">No tracked process data available.</div>';
+    document.getElementById('camunda-task-list').innerHTML = '<div style="color:var(--text3)">No task data available.</div>';
+    return null;
+  }
+}
+
 function renderSarQueueDetail(detail, sar, events) {
   if (!detail || !sar) {
     return '<div style="color:var(--text3)">No SAR selected.</div>';
@@ -1967,6 +2580,7 @@ function renderSarQueueDetail(detail, sar, events) {
   const readyForApproval = ['draft', 'pending_review'].includes(sar.status || '');
   const readyForReject = ['draft', 'pending_review', 'approved'].includes(sar.status || '');
   const readyForFile = sar.status === 'approved';
+  const queueItem = (latestSarQueueData?.items || []).find((item) => item.case_id === detail.id);
   return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
     <div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
@@ -1974,6 +2588,7 @@ function renderSarQueueDetail(detail, sar, events) {
         <span class="mono" style="font-size:11px;color:var(--text3)">${escapeHtml(sar.sar_ref)}</span>
         <span class="badge ${badgeClassByState(detail.priority)}">${escapeHtml(String(detail.priority || '').toUpperCase())}</span>
         <span class="badge ${badgeClassByState(sar.status)}">${escapeHtml(String(sar.status || '').replaceAll('_', ' ').toUpperCase())}</span>
+        ${queueItem?.sla_status ? `<span class="badge ${badgeClassByState(queueItem.sla_status)}">${escapeHtml(String(queueItem.sla_status).replaceAll('_', ' ').toUpperCase())}</span>` : ''}
       </div>
       <div style="font-size:16px;font-weight:500;margin-bottom:6px">${escapeHtml(detail.title)}</div>
       <div style="font-size:12px;color:var(--text2)">${escapeHtml(detail.ai_summary || detail.description || 'No case summary available yet.')}</div>
@@ -1985,8 +2600,11 @@ function renderSarQueueDetail(detail, sar, events) {
     <div class="card" style="background:var(--bg3)">
       <div class="card-title">Queue Context</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Assigned: <span style="color:var(--text)">${escapeHtml(detail.assigned_to || 'Unassigned')}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Queue owner: <span style="color:var(--text)">${escapeHtml(queueItem?.queue_owner || detail.assigned_to || 'Unassigned')}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Alerts: <span style="color:var(--text)">${detail.alert_ids?.length ?? 0}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Transactions: <span style="color:var(--text)">${detail.transaction_ids?.length ?? 0}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Current age: <span style="color:var(--text)">${escapeHtml(formatHours(queueItem?.age_hours))}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">SLA due: <span class="mono" style="color:var(--text)">${escapeHtml(formatDateTime(queueItem?.sla_due_at))}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Drafted by: <span style="color:var(--text)">${escapeHtml(sar.drafted_by || '—')}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Reviewed by: <span style="color:var(--text)">${escapeHtml(sar.reviewed_by || '—')}</span></div>
       <div style="font-size:12px;color:var(--text2)">Approved by: <span style="color:var(--text)">${escapeHtml(sar.approved_by || '—')}</span></div>
@@ -2048,15 +2666,31 @@ function renderWatchlistDetail(profile) {
       <div class="card-title">Watchlist State</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Status: <span style="color:var(--text)">${escapeHtml(watchlist.status || 'inactive')}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Added by: <span style="color:var(--text)">${escapeHtml(watchlist.added_by || '—')}</span></div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Added at: <span class="mono" style="color:var(--text)">${escapeHtml(watchlist.added_at ? new Date(watchlist.added_at).toLocaleString() : '—')}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Added at: <span class="mono" style="color:var(--text)">${escapeHtml(formatDateTime(watchlist.added_at))}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Re-screen cadence: <span style="color:var(--text)">${watchlist.rescreen_interval_days || 14} days</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Last screened: <span class="mono" style="color:var(--text)">${escapeHtml(formatDateTime(watchlist.last_screened_at))}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Next due: <span class="mono" style="color:var(--text)">${escapeHtml(formatDateTime(watchlist.next_screening_due_at))}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Re-screen state: <span class="badge ${badgeClassByState(watchlist.rescreen_status)}">${escapeHtml(String(watchlist.rescreen_status || 'current').replaceAll('_', ' ').toUpperCase())}</span></div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Open review case: <span style="color:var(--text)">${escapeHtml(watchlist.case_ref || 'None')}</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Last match count: <span style="color:var(--text)">${watchlist.last_match_count ?? 0}</span></div>
       <div style="font-size:12px;color:var(--text2)">Risk score: <span style="color:${riskColor(Number(profile.risk_score || 0))}">${profile.risk_score != null ? Number(profile.risk_score).toFixed(2) : '—'}</span></div>
     </div>
     <div class="card" style="background:var(--bg3)">
       <div class="card-title">Watchlist Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Actor</div>
+          <input class="input" id="watchlist-actor-input" value="${escapeHtml(watchlist.last_screened_by || watchlist.added_by || 'analyst1')}" placeholder="analyst or automation actor"/>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Last trigger</div>
+          <div style="display:flex;align-items:center;height:40px;color:var(--text2)">${escapeHtml(watchlist.last_screening_trigger || 'manual review')}</div>
+        </div>
+      </div>
       <textarea class="input" id="watchlist-note-input" rows="4" style="width:100%;resize:vertical;margin-bottom:10px" placeholder="Add watchlist rationale, removal note, or escalation guidance..."></textarea>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--purple);color:var(--purple)" onclick="runWatchlistAction('create_watchlist_case')">${watchlist.case_id ? 'Reuse watchlist case' : 'Open watchlist case'}</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--cyan);color:var(--cyan)" onclick="runWatchlistEntityRescreen()">Re-screen now</button>
         <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px;border-color:var(--green);color:var(--green)" onclick="runWatchlistAction('remove_from_watchlist')" ${!active ? 'disabled' : ''}>Remove from watchlist</button>
         <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="runWatchlistAction('add_note')">Add note</button>
       </div>
@@ -3637,6 +4271,12 @@ async function loadDashboard() {
 }
 
 loadDashboard();
+setInterval(() => {
+  const activePageId = document.querySelector('.page.active')?.id;
+  if (activePageId === 'page-workflow-ops') loadWorkflowOps();
+  if (activePageId === 'page-n8n') loadN8nDashboard();
+  if (activePageId === 'page-camunda') loadCamundaDashboard();
+}, 15000);
 </script>
 </body>
 </html>

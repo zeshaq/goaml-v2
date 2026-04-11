@@ -1,0 +1,80 @@
+[
+  {
+    "name": "goAML SAR SLA Notifications Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 10
+              }
+            ]
+          }
+        },
+        "id": "a96a46f1-bcff-4fda-a6fb-fdd20ce3af12",
+        "name": "Weekday SLA Notification Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/workflow/sla/notify",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"triggered_by\":\"n8n-sla-notification\",\"channels\":[\"slack\",\"email\"],\"breached_only\":true,\"include_due_soon\":true}"
+        },
+        "id": "264d2b3d-f12e-4995-9d79-a7e8f38f31b9",
+        "name": "Dispatch SLA Notifications",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Weekday SLA Notification Schedule": {
+        "main": [
+          [
+            {
+              "node": "Dispatch SLA Notifications",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "6e9d841c-20e4-4110-bde0-b5f1f9e75f0d"
+  }
+]

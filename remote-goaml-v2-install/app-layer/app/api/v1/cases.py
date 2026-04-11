@@ -19,6 +19,8 @@ from models.casework import (
     CaseUpdate,
     SarDraftRequest,
     SarFileRequest,
+    SarRebalanceRequest,
+    SarRebalanceResponse,
     SarReportDetail,
     SarQueueResponse,
     SarWorkflowRequest,
@@ -35,6 +37,7 @@ from services.cases import (
     file_sar,
     get_case_detail,
     get_case_sar,
+    rebalance_sar_queue,
     list_sar_queue,
     list_case_events,
     list_case_notes,
@@ -58,6 +61,24 @@ async def get_sar_queue(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SarQueueResponse(**row)
+
+
+@router.post("/sars/queue/rebalance", response_model=SarRebalanceResponse, summary="Automatically rebalance SAR queue workload across analysts")
+async def post_sar_queue_rebalance(payload: SarRebalanceRequest):
+    try:
+        row = await rebalance_sar_queue(
+            actor=payload.actor,
+            queue=payload.queue,
+            limit=payload.limit,
+            analyst_pool=payload.analyst_pool,
+            breached_only=payload.breached_only,
+            include_due_soon=payload.include_due_soon,
+            max_items_per_owner=payload.max_items_per_owner,
+            min_workload_gap=payload.min_workload_gap,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SarRebalanceResponse(**row)
 
 
 @router.post("/cases", response_model=CaseDetail, status_code=status.HTTP_201_CREATED, summary="Create case")

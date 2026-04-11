@@ -4,7 +4,8 @@ goAML-V2 case management service.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
 from uuid import UUID
@@ -25,6 +26,8 @@ from models.casework import (
     SarWorkflowRequest,
 )
 from services.graph_sync import safe_resync_graph
+from services.routing import resolve_case_routing, routing_metadata_payload
+from services.workflow_engine import advance_sar_camunda_flow
 
 
 def _normalize_json_dict(value: Any) -> dict[str, Any]:
@@ -67,6 +70,217 @@ def _task_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _safe_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _sar_queue_bucket(status: str | None) -> str:
+    status_key = str(status or "").lower()
+    if status_key in {"draft", "rejected"}:
+        return "draft"
+    if status_key == "pending_review":
+        return "review"
+    if status_key == "approved":
+        return "approval"
+    if status_key == "filed":
+        return "filed"
+    return "other"
+
+
+def _sar_queue_sla_hours(queue_key: str) -> float | None:
+    if queue_key == "draft":
+        return settings.SAR_DRAFT_SLA_HOURS
+    if queue_key == "review":
+        return settings.SAR_REVIEW_SLA_HOURS
+    if queue_key == "approval":
+        return settings.SAR_APPROVAL_SLA_HOURS
+    return None
+
+
+def _workflow_timestamp(metadata: dict[str, Any], *, action: str | None = None, status: str | None = None) -> datetime | None:
+    history = _normalize_json_list(metadata.get("workflow_history"))
+    for item in reversed(history):
+        if not isinstance(item, dict):
+            continue
+        if action and str(item.get("action") or "") != action:
+            continue
+        if status and str(item.get("status") or "") != status:
+            continue
+        parsed = _safe_datetime(item.get("created_at"))
+        if parsed:
+            return parsed
+    return None
+
+
+def _sar_queue_owner(item: dict[str, Any], queue_key: str) -> str | None:
+    owner_candidates: list[Any]
+    if queue_key == "approval":
+        owner_candidates = [item.get("assigned_to"), item.get("approved_by"), item.get("reviewed_by"), item.get("drafted_by")]
+    elif queue_key == "review":
+        owner_candidates = [item.get("assigned_to"), item.get("reviewed_by"), item.get("drafted_by")]
+    elif queue_key == "draft":
+        owner_candidates = [item.get("assigned_to"), item.get("drafted_by"), item.get("reviewed_by")]
+    else:
+        owner_candidates = [item.get("approved_by"), item.get("reviewed_by"), item.get("assigned_to"), item.get("drafted_by")]
+
+    for candidate in owner_candidates:
+        if candidate:
+            return str(candidate)
+    return None
+
+
+def _sar_queue_age_reference(item: dict[str, Any], metadata: dict[str, Any], queue_key: str) -> datetime | None:
+    if queue_key == "review":
+        return (
+            _workflow_timestamp(metadata, action="submit_review")
+            or _workflow_timestamp(metadata, status="pending_review")
+            or _safe_datetime(item.get("updated_at"))
+            or _safe_datetime(item.get("drafted_at"))
+            or _safe_datetime(item.get("created_at"))
+        )
+    if queue_key == "approval":
+        return (
+            _safe_datetime(item.get("approved_at"))
+            or _workflow_timestamp(metadata, action="approve")
+            or _workflow_timestamp(metadata, status="approved")
+            or _safe_datetime(item.get("updated_at"))
+            or _safe_datetime(item.get("drafted_at"))
+            or _safe_datetime(item.get("created_at"))
+        )
+    if queue_key == "draft":
+        return (
+            _workflow_timestamp(metadata, action="reject") if str(item.get("sar_status") or "").lower() == "rejected" else None
+        ) or _safe_datetime(item.get("updated_at")) or _safe_datetime(item.get("drafted_at")) or _safe_datetime(item.get("created_at"))
+    return _safe_datetime(item.get("filed_at")) or _safe_datetime(item.get("updated_at")) or _safe_datetime(item.get("created_at"))
+
+
+def _sar_queue_sla_state(age_hours: float | None, sla_hours: float | None) -> str | None:
+    if age_hours is None or sla_hours is None:
+        return None
+    if age_hours > sla_hours:
+        return "breached"
+    if age_hours >= sla_hours * 0.75:
+        return "due_soon"
+    return "within_sla"
+
+
+def _average(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def _priority_rank(priority: str | None) -> int:
+    value = str(priority or "").lower()
+    if value == "critical":
+        return 4
+    if value == "high":
+        return 3
+    if value == "medium":
+        return 2
+    if value == "low":
+        return 1
+    return 0
+
+
+def _configured_analyst_pool() -> list[str]:
+    pool: list[str] = []
+    for item in str(settings.SAR_AUTOBALANCE_ANALYST_POOL or "").split(","):
+        name = item.strip()
+        if name and name.lower() != "unassigned" and name not in pool:
+            pool.append(name)
+    return pool
+
+
+def _resolved_analyst_pool(items: list[dict[str, Any]], analyst_pool: list[str] | None = None) -> list[str]:
+    pool: list[str] = []
+    for item in analyst_pool or []:
+        name = str(item).strip()
+        if name and name.lower() != "unassigned" and name not in pool:
+            pool.append(name)
+    for item in _configured_analyst_pool():
+        if item not in pool:
+            pool.append(item)
+    for row in items:
+        for candidate in [row.get("assigned_to"), row.get("reviewed_by"), row.get("approved_by"), row.get("drafted_by")]:
+            name = str(candidate or "").strip()
+            if name and name.lower() != "unassigned" and name not in pool:
+                pool.append(name)
+    return pool
+
+
+async def _fetch_sar_queue_items(conn: Any) -> list[dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT
+            c.id AS case_id,
+            c.case_ref,
+            c.title AS case_title,
+            c.status AS case_status,
+            c.priority AS case_priority,
+            c.assigned_to,
+            c.primary_entity_id,
+            c.primary_account_id,
+            c.metadata AS case_metadata,
+            COUNT(DISTINCT ca.alert_id)::int AS alert_count,
+            COUNT(DISTINCT ct.transaction_id)::int AS transaction_count,
+            s.id AS sar_id,
+            s.sar_ref,
+            s.status AS sar_status,
+            s.subject_name,
+            s.subject_type,
+            s.subject_account,
+            s.activity_type,
+            s.activity_amount,
+            s.drafted_by,
+            s.drafted_at,
+            s.reviewed_by,
+            s.reviewed_at,
+            s.approved_by,
+            s.approved_at,
+            s.filed_at,
+            s.filing_ref,
+            s.ai_drafted,
+            s.ai_model,
+            s.metadata,
+            s.created_at,
+            s.updated_at
+        FROM sar_reports s
+        JOIN cases c ON c.id = s.case_id
+        LEFT JOIN case_alerts ca ON ca.case_id = c.id
+        LEFT JOIN case_transactions ct ON ct.case_id = c.id
+        WHERE TRUE
+        GROUP BY
+            c.id, c.case_ref, c.title, c.status, c.priority, c.assigned_to,
+            c.primary_entity_id, c.primary_account_id, c.metadata,
+            s.id, s.sar_ref, s.status, s.subject_name, s.subject_type,
+            s.subject_account, s.activity_type, s.activity_amount,
+            s.drafted_by, s.drafted_at, s.reviewed_by, s.reviewed_at,
+            s.approved_by, s.approved_at, s.filed_at, s.filing_ref,
+            s.ai_drafted, s.ai_model, s.metadata, s.created_at, s.updated_at
+        ORDER BY
+            CASE
+                WHEN s.status = 'pending_review' THEN 0
+                WHEN s.status = 'approved' THEN 1
+                WHEN s.status IN ('draft', 'rejected') THEN 2
+                WHEN s.status = 'filed' THEN 3
+                ELSE 4
+            END,
+            COALESCE(s.updated_at, s.created_at) DESC,
+            c.created_at DESC
+        """,
+    )
+    return [_normalize_sar_queue_item(dict(row)) for row in rows]
+
+
 def _normalize_task_item(item: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(item)
     for key in ("created_at", "updated_at", "due_at", "completed_at"):
@@ -88,6 +302,21 @@ async def create_case(payload: CaseCreate) -> dict[str, Any]:
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            workflow_type = "watchlist" if payload.metadata.get("entity_workflow") == "watchlist_review" else (
+                "alert_investigation" if payload.alert_ids else "general"
+            )
+            routing = await resolve_case_routing(
+                conn,
+                workflow_type=workflow_type,
+                primary_entity_id=payload.primary_entity_id,
+                primary_account_id=payload.primary_account_id,
+                alert_ids=payload.alert_ids,
+                transaction_ids=payload.transaction_ids,
+                preferred_assignee=payload.assigned_to,
+                existing_metadata=payload.metadata,
+            )
+            metadata = dict(payload.metadata)
+            metadata["routing"] = routing_metadata_payload(routing, workflow_type=workflow_type, source="create_case")
             row = await conn.fetchrow(
                 """
                 INSERT INTO cases (
@@ -99,12 +328,12 @@ async def create_case(payload: CaseCreate) -> dict[str, Any]:
                 payload.title,
                 payload.description,
                 payload.priority.value,
-                payload.assigned_to,
+                payload.assigned_to or routing.get("assigned_to"),
                 payload.created_by,
                 payload.primary_account_id,
                 payload.primary_entity_id,
                 payload.sar_required,
-                json.dumps(payload.metadata),
+                json.dumps(metadata),
             )
             case_id = row["id"]
 
@@ -146,6 +375,7 @@ async def create_case(payload: CaseCreate) -> dict[str, Any]:
                 json.dumps({
                     "alert_ids": [str(i) for i in payload.alert_ids],
                     "transaction_ids": [str(i) for i in payload.transaction_ids],
+                    "routing": metadata.get("routing"),
                 }),
             )
 
@@ -264,10 +494,133 @@ async def get_case_sar(case_id: UUID) -> dict[str, Any] | None:
 def _normalize_sar_queue_item(row: dict[str, Any]) -> dict[str, Any]:
     item = dict(row)
     metadata = _normalize_json_dict(item.pop("metadata", {}))
+    item["case_metadata"] = _normalize_json_dict(item.pop("case_metadata", {}))
     item["activity_amount"] = float(item["activity_amount"]) if item.get("activity_amount") is not None else None
     item["latest_workflow_note"] = metadata.get("latest_workflow_note") or metadata.get("latest_rejection_reason")
     item["workflow_step_count"] = len(_normalize_json_list(metadata.get("workflow_history")))
+    queue_key = _sar_queue_bucket(item.get("sar_status"))
+    queue_owner = _sar_queue_owner(item, queue_key)
+    age_reference = _sar_queue_age_reference(item, metadata, queue_key)
+    sla_hours = _sar_queue_sla_hours(queue_key)
+    age_hours = None
+    sla_due_at = None
+    if age_reference:
+        now = datetime.now(timezone.utc)
+        age_hours = round(max((now - age_reference).total_seconds(), 0) / 3600, 2)
+        if sla_hours is not None:
+            sla_due_at = age_reference + timedelta(hours=sla_hours)
+    item["queue_owner"] = queue_owner
+    item["age_hours"] = age_hours
+    item["sla_hours"] = sla_hours
+    item["sla_due_at"] = sla_due_at
+    item["sla_status"] = _sar_queue_sla_state(age_hours, sla_hours)
     return item
+
+
+def _build_sar_queue_analytics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    generated_at = datetime.now(timezone.utc)
+    queue_defs = {
+        "draft": "Draft / Rejected",
+        "review": "Pending Review",
+        "approval": "Approved / Ready to File",
+    }
+
+    queue_sla: list[dict[str, Any]] = []
+    overall_breached = 0
+    overall_due_soon = 0
+
+    for queue_key, label in queue_defs.items():
+        queue_items = [item for item in items if _sar_queue_bucket(item.get("sar_status")) == queue_key]
+        ages = [float(item["age_hours"]) for item in queue_items if item.get("age_hours") is not None]
+        breached_count = sum(1 for item in queue_items if item.get("sla_status") == "breached")
+        due_soon_count = sum(1 for item in queue_items if item.get("sla_status") == "due_soon")
+        overall_breached += breached_count
+        overall_due_soon += due_soon_count
+        queue_sla.append(
+            {
+                "queue": queue_key,
+                "label": label,
+                "item_count": len(queue_items),
+                "breached_count": breached_count,
+                "due_soon_count": due_soon_count,
+                "avg_age_hours": _average(ages),
+                "oldest_age_hours": round(max(ages), 2) if ages else None,
+                "sla_hours": _sar_queue_sla_hours(queue_key),
+            }
+        )
+
+    owner_map: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "owner": "unassigned",
+            "display_name": "Unassigned",
+            "draft_count": 0,
+            "review_count": 0,
+            "approval_count": 0,
+            "filed_count": 0,
+            "breached_count": 0,
+            "high_priority_count": 0,
+            "_ages": [],
+        }
+    )
+
+    for item in items:
+        queue_key = _sar_queue_bucket(item.get("sar_status"))
+        owner = item.get("queue_owner") or "unassigned"
+        workload = owner_map[owner]
+        workload["owner"] = owner
+        workload["display_name"] = "Unassigned" if owner == "unassigned" else owner
+        if queue_key == "draft":
+            workload["draft_count"] += 1
+        elif queue_key == "review":
+            workload["review_count"] += 1
+        elif queue_key == "approval":
+            workload["approval_count"] += 1
+        elif queue_key == "filed":
+            workload["filed_count"] += 1
+        if item.get("sla_status") == "breached":
+            workload["breached_count"] += 1
+        if str(item.get("case_priority") or "").lower() in {"high", "critical"} and queue_key in {"draft", "review", "approval"}:
+            workload["high_priority_count"] += 1
+        if item.get("age_hours") is not None and queue_key in {"draft", "review", "approval"}:
+            workload["_ages"].append(float(item["age_hours"]))
+
+    owner_items: list[dict[str, Any]] = []
+    for value in owner_map.values():
+        ages = value.pop("_ages")
+        value["avg_age_hours"] = _average(ages)
+        value["oldest_age_hours"] = round(max(ages), 2) if ages else None
+        owner_items.append(value)
+
+    owner_items.sort(
+        key=lambda item: (
+            -(item["review_count"] + item["approval_count"] + item["draft_count"]),
+            -item["breached_count"],
+            -item["high_priority_count"],
+            item["display_name"].lower(),
+        )
+    )
+
+    active_owner_count = sum(
+        1 for item in owner_items if (item["review_count"] + item["approval_count"] + item["draft_count"]) > 0
+    )
+    summary = [
+        f"{overall_breached} active SAR items are currently outside SLA.",
+        f"{overall_due_soon} active SAR items are due soon against configured thresholds.",
+    ]
+    if owner_items:
+        busiest = owner_items[0]
+        active_count = busiest["review_count"] + busiest["approval_count"] + busiest["draft_count"]
+        summary.append(f"{busiest['display_name']} currently owns {active_count} active SAR items.")
+
+    return {
+        "generated_at": generated_at,
+        "overall_breached_count": overall_breached,
+        "overall_due_soon_count": overall_due_soon,
+        "active_owner_count": active_owner_count,
+        "queue_sla": queue_sla,
+        "owner_workloads": owner_items[:8],
+        "summary": summary,
+    }
 
 
 async def list_sar_queue(
@@ -277,97 +630,222 @@ async def list_sar_queue(
     offset: int,
 ) -> dict[str, Any]:
     queue_key = queue.lower()
-    queue_filters = {
-        "draft": "s.status IN ('draft', 'rejected')",
-        "review": "s.status = 'pending_review'",
-        "approval": "s.status = 'approved'",
-        "filed": "s.status = 'filed'",
-        "all": "1=1",
-    }
-    if queue_key not in queue_filters:
+    if queue_key not in {"draft", "review", "approval", "filed", "all"}:
         raise ValueError(f"Unsupported SAR queue: {queue}")
 
     pool = get_pool()
     async with pool.acquire() as conn:
-        count_row = await conn.fetchrow(
-            """
-            SELECT
-                COUNT(*) FILTER (WHERE status IN ('draft', 'rejected'))::int AS draft,
-                COUNT(*) FILTER (WHERE status = 'pending_review')::int AS review,
-                COUNT(*) FILTER (WHERE status = 'approved')::int AS approval,
-                COUNT(*) FILTER (WHERE status = 'filed')::int AS filed,
-                COUNT(*)::int AS total
-            FROM sar_reports
-            """
+        all_items = await _fetch_sar_queue_items(conn)
+    counts = {
+        "draft": sum(1 for item in all_items if _sar_queue_bucket(item.get("sar_status")) == "draft"),
+        "review": sum(1 for item in all_items if _sar_queue_bucket(item.get("sar_status")) == "review"),
+        "approval": sum(1 for item in all_items if _sar_queue_bucket(item.get("sar_status")) == "approval"),
+        "filed": sum(1 for item in all_items if _sar_queue_bucket(item.get("sar_status")) == "filed"),
+        "total": len(all_items),
+    }
+    if queue_key == "all":
+        filtered_items = all_items
+    else:
+        filtered_items = [item for item in all_items if _sar_queue_bucket(item.get("sar_status")) == queue_key]
+
+    return {
+        "queue": queue_key,
+        "counts": counts,
+        "analytics": _build_sar_queue_analytics(all_items),
+        "items": filtered_items[offset : offset + limit],
+    }
+
+
+async def rebalance_sar_queue(
+    *,
+    actor: str | None,
+    queue: str,
+    limit: int,
+    analyst_pool: list[str] | None = None,
+    breached_only: bool = True,
+    include_due_soon: bool | None = None,
+    max_items_per_owner: int | None = None,
+    min_workload_gap: int | None = None,
+) -> dict[str, Any]:
+    queue_key = queue.lower()
+    if queue_key not in {"draft", "review", "approval", "all"}:
+        raise ValueError(f"Unsupported SAR rebalance queue: {queue}")
+
+    actor_name = actor or "sar-queue-automation"
+    due_soon_enabled = settings.SAR_AUTOBALANCE_INCLUDE_DUE_SOON if include_due_soon is None else include_due_soon
+    effective_limit = min(limit, settings.SAR_AUTOBALANCE_BATCH_LIMIT)
+    owner_cap = max_items_per_owner or settings.SAR_AUTOBALANCE_MAX_ITEMS_PER_OWNER
+    workload_gap = min_workload_gap or settings.SAR_AUTOBALANCE_MIN_WORKLOAD_GAP
+
+    pool = get_pool()
+    moved_items: list[dict[str, Any]] = []
+
+    async with pool.acquire() as conn:
+        items = await _fetch_sar_queue_items(conn)
+        active_queue_keys = {"draft", "review", "approval"} if queue_key == "all" else {queue_key}
+        active_items = [item for item in items if _sar_queue_bucket(item.get("sar_status")) in active_queue_keys]
+        owner_pool = _resolved_analyst_pool(active_items, analyst_pool)
+        if not owner_pool:
+            return {
+                "queue": queue_key,
+                "processed_count": 0,
+                "reassigned_count": 0,
+                "owner_count": 0,
+                "items": [],
+                "summary": ["No analyst pool is available for SAR queue rebalancing."],
+                "generated_at": datetime.now(timezone.utc),
+            }
+
+        workload_map = {owner: 0 for owner in owner_pool}
+        for item in active_items:
+            owner = item.get("queue_owner")
+            if owner in workload_map:
+                workload_map[owner] += 1
+
+        def _eligible_for_rebalance(item: dict[str, Any]) -> bool:
+            current_queue = _sar_queue_bucket(item.get("sar_status"))
+            if current_queue not in active_queue_keys:
+                return False
+            if item.get("case_status") == "closed":
+                return False
+            if breached_only:
+                if item.get("sla_status") == "breached":
+                    return True
+                if due_soon_enabled and item.get("sla_status") == "due_soon":
+                    return True
+                owner = item.get("queue_owner")
+                return (not owner) or (owner not in workload_map)
+            return True
+
+        candidates = [item for item in active_items if _eligible_for_rebalance(item)]
+        candidates.sort(
+            key=lambda item: (
+                0 if not item.get("queue_owner") or item.get("queue_owner") not in workload_map else 1,
+                0 if item.get("sla_status") == "breached" else 1 if item.get("sla_status") == "due_soon" else 2,
+                -_priority_rank(item.get("case_priority")),
+                -(item.get("age_hours") or 0.0),
+                str(item.get("case_ref") or ""),
+            )
         )
 
-        rows = await conn.fetch(
-            f"""
-            SELECT
-                c.id AS case_id,
-                c.case_ref,
-                c.title AS case_title,
-                c.status AS case_status,
-                c.priority AS case_priority,
-                c.assigned_to,
-                c.primary_entity_id,
-                c.primary_account_id,
-                COUNT(DISTINCT ca.alert_id)::int AS alert_count,
-                COUNT(DISTINCT ct.transaction_id)::int AS transaction_count,
-                s.id AS sar_id,
-                s.sar_ref,
-                s.status AS sar_status,
-                s.subject_name,
-                s.subject_type,
-                s.subject_account,
-                s.activity_type,
-                s.activity_amount,
-                s.drafted_by,
-                s.drafted_at,
-                s.reviewed_by,
-                s.reviewed_at,
-                s.approved_by,
-                s.approved_at,
-                s.filed_at,
-                s.filing_ref,
-                s.ai_drafted,
-                s.ai_model,
-                s.metadata,
-                s.created_at,
-                s.updated_at
-            FROM sar_reports s
-            JOIN cases c ON c.id = s.case_id
-            LEFT JOIN case_alerts ca ON ca.case_id = c.id
-            LEFT JOIN case_transactions ct ON ct.case_id = c.id
-            WHERE {queue_filters[queue_key]}
-            GROUP BY
-                c.id, c.case_ref, c.title, c.status, c.priority, c.assigned_to,
-                c.primary_entity_id, c.primary_account_id,
-                s.id, s.sar_ref, s.status, s.subject_name, s.subject_type,
-                s.subject_account, s.activity_type, s.activity_amount,
-                s.drafted_by, s.drafted_at, s.reviewed_by, s.reviewed_at,
-                s.approved_by, s.approved_at, s.filed_at, s.filing_ref,
-                s.ai_drafted, s.ai_model, s.metadata, s.created_at, s.updated_at
-            ORDER BY
-                CASE
-                    WHEN s.status = 'pending_review' THEN 0
-                    WHEN s.status = 'approved' THEN 1
-                    WHEN s.status IN ('draft', 'rejected') THEN 2
-                    WHEN s.status = 'filed' THEN 3
-                    ELSE 4
-                END,
-                COALESCE(s.updated_at, s.created_at) DESC,
-                c.created_at DESC
-            LIMIT $1 OFFSET $2
-            """,
-            limit,
-            offset,
+        async with conn.transaction():
+            for item in candidates:
+                if len(moved_items) >= effective_limit:
+                    break
+
+                previous_owner = item.get("queue_owner")
+                routing = await resolve_case_routing(
+                    conn,
+                    workflow_type="sar_review",
+                    primary_entity_id=item.get("primary_entity_id"),
+                    primary_account_id=item.get("primary_account_id"),
+                    preferred_assignee=item.get("queue_owner") or item.get("assigned_to"),
+                    existing_metadata=item.get("case_metadata"),
+                )
+                target_pool = [owner for owner in routing.get("eligible_analysts", []) if owner in owner_pool] or owner_pool
+                previous_count = workload_map.get(previous_owner, owner_cap + workload_gap if previous_owner else 0)
+                ranked_targets = sorted(target_pool, key=lambda owner: (workload_map.get(owner, 0), owner.lower()))
+                target_owner = ranked_targets[0] if ranked_targets else None
+                if not target_owner:
+                    break
+                target_count = workload_map.get(target_owner, 0)
+
+                should_move = False
+                if not previous_owner or previous_owner not in workload_map:
+                    should_move = True
+                elif target_owner != previous_owner and previous_count > owner_cap:
+                    should_move = True
+                elif target_owner != previous_owner and previous_count - target_count >= workload_gap:
+                    should_move = True
+                elif target_owner != previous_owner and item.get("sla_status") == "breached" and previous_count > target_count:
+                    should_move = True
+
+                if not should_move or target_owner == previous_owner:
+                    continue
+
+                next_case_metadata = dict(item.get("case_metadata") or {})
+                next_case_metadata["routing"] = routing_metadata_payload(
+                    {
+                        **routing,
+                        "assigned_to": target_owner,
+                    },
+                    workflow_type="sar_review",
+                    source="sar_rebalance",
+                )
+                await conn.execute(
+                    """
+                    UPDATE cases
+                    SET assigned_to = $2, metadata = $3::jsonb, updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    item["case_id"],
+                    target_owner,
+                    json.dumps(next_case_metadata),
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO case_events (case_id, event_type, actor, detail, metadata)
+                    VALUES ($1, 'sar_workload_rebalanced', $2, $3, $4::jsonb)
+                    """,
+                    item["case_id"],
+                    actor_name,
+                    f"SAR workload rebalanced to {target_owner}",
+                    json.dumps(
+                        {
+                            "sar_id": str(item["sar_id"]),
+                            "sar_ref": item["sar_ref"],
+                            "queue": _sar_queue_bucket(item.get("sar_status")),
+                            "previous_owner": previous_owner,
+                            "new_owner": target_owner,
+                            "sla_status": item.get("sla_status"),
+                            "age_hours": item.get("age_hours"),
+                            "team_key": routing.get("team_key"),
+                            "region_key": routing.get("region_key"),
+                        }
+                    ),
+                )
+
+                if previous_owner in workload_map:
+                    workload_map[previous_owner] = max(workload_map[previous_owner] - 1, 0)
+                workload_map[target_owner] = workload_map.get(target_owner, 0) + 1
+                moved_items.append(
+                    {
+                        "case_id": item["case_id"],
+                        "case_ref": item["case_ref"],
+                        "sar_id": item["sar_id"],
+                        "sar_ref": item["sar_ref"],
+                        "queue": _sar_queue_bucket(item.get("sar_status")),
+                        "previous_owner": previous_owner,
+                        "new_owner": target_owner,
+                        "previous_active_count": previous_count,
+                        "new_owner_active_count": workload_map[target_owner],
+                        "sla_status": item.get("sla_status"),
+                        "case_priority": item.get("case_priority"),
+                        "note": f"Reassigned from {previous_owner or 'unassigned'} to {target_owner} for {routing.get('team_label')}.",
+                    }
+                )
+
+    if moved_items:
+        await safe_resync_graph(clear_existing=True)
+
+    summary = [
+        f"Processed {len(candidates)} eligible SAR queue items across the {queue_key} queue.",
+        f"Reassigned {len(moved_items)} SAR items to rebalance owner workload.",
+        f"Analyst pool size: {len(_resolved_analyst_pool(active_items, analyst_pool))}.",
+    ]
+    if moved_items:
+        summary.append(
+            f"Most recent reassignment moved {moved_items[-1]['case_ref']} to {moved_items[-1]['new_owner']}."
         )
 
     return {
         "queue": queue_key,
-        "counts": dict(count_row or {}),
-        "items": [_normalize_sar_queue_item(dict(row)) for row in rows],
+        "processed_count": len(candidates),
+        "reassigned_count": len(moved_items),
+        "owner_count": len(_resolved_analyst_pool(active_items, analyst_pool)),
+        "items": moved_items,
+        "summary": summary,
+        "generated_at": datetime.now(timezone.utc),
     }
 
 
@@ -532,6 +1010,7 @@ async def update_case(case_id: UUID, payload: CaseUpdate) -> dict[str, Any] | No
             if not current:
                 return None
 
+            metadata = _normalize_json_dict(current["metadata"])
             status_value = payload.status.value if payload.status else current["status"]
             priority_value = payload.priority.value if payload.priority else current["priority"]
             ai_risk_factors = (
@@ -555,7 +1034,8 @@ async def update_case(case_id: UUID, payload: CaseUpdate) -> dict[str, Any] | No
                     closed_at = CASE WHEN $2::case_status = 'closed' THEN NOW() ELSE NULL END,
                     ai_summary = COALESCE($6, ai_summary),
                     ai_risk_factors = $7,
-                    sar_required = COALESCE($8, sar_required)
+                    sar_required = COALESCE($8, sar_required),
+                    metadata = $9::jsonb
                 WHERE id = $1
                 """,
                 case_id,
@@ -566,6 +1046,17 @@ async def update_case(case_id: UUID, payload: CaseUpdate) -> dict[str, Any] | No
                 payload.ai_summary,
                 ai_risk_factors,
                 payload.sar_required,
+                json.dumps({
+                    **metadata,
+                    "routing": (
+                        {
+                            **_normalize_json_dict(metadata.get("routing")),
+                            "assigned_to": payload.assigned_to,
+                        }
+                        if payload.assigned_to is not None
+                        else metadata.get("routing")
+                    ),
+                }),
             )
 
             for alert_id in payload.add_alert_ids:
@@ -823,6 +1314,7 @@ async def advance_sar_workflow(case_id: UUID, payload: SarWorkflowRequest) -> di
     result["metadata"] = _normalize_json_dict(result.get("metadata"))
     result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
     await safe_resync_graph(clear_existing=True)
+    await advance_sar_camunda_flow(case_id, action=payload.action.value, actor=actor, note=note)
     return result
 
 

@@ -17,6 +17,7 @@ from api.v1.screening import router as screening_router
 from api.v1.graph import router as graph_router
 from api.v1.documents import router as documents_router
 from api.v1.entities import router as entities_router
+from api.v1.workflows import router as workflows_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ app.include_router(screening_router, prefix="/api/v1", tags=["screening"])
 app.include_router(graph_router, prefix="/api/v1", tags=["graph"])
 app.include_router(documents_router, prefix="/api/v1", tags=["documents"])
 app.include_router(entities_router, prefix="/api/v1", tags=["entities"])
+app.include_router(workflows_router, prefix="/api/v1", tags=["workflow"])
 
 
 @app.get("/health")

@@ -282,14 +282,90 @@ class SarQueueItem(BaseModel):
     ai_model: str | None = None
     latest_workflow_note: str | None = None
     workflow_step_count: int = 0
+    queue_owner: str | None = None
+    age_hours: float | None = None
+    sla_hours: float | None = None
+    sla_due_at: datetime | None = None
+    sla_status: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SarQueueSlaMetric(BaseModel):
+    queue: str
+    label: str
+    item_count: int = 0
+    breached_count: int = 0
+    due_soon_count: int = 0
+    avg_age_hours: float | None = None
+    oldest_age_hours: float | None = None
+    sla_hours: float | None = None
+
+
+class SarWorkloadOwnerItem(BaseModel):
+    owner: str
+    display_name: str
+    draft_count: int = 0
+    review_count: int = 0
+    approval_count: int = 0
+    filed_count: int = 0
+    breached_count: int = 0
+    high_priority_count: int = 0
+    avg_age_hours: float | None = None
+    oldest_age_hours: float | None = None
+
+
+class SarQueueAnalytics(BaseModel):
+    generated_at: datetime
+    overall_breached_count: int = 0
+    overall_due_soon_count: int = 0
+    active_owner_count: int = 0
+    queue_sla: list[SarQueueSlaMetric] = Field(default_factory=list)
+    owner_workloads: list[SarWorkloadOwnerItem] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
 
 
 class SarQueueResponse(BaseModel):
     queue: str
     counts: SarQueueCounts
+    analytics: SarQueueAnalytics | None = None
     items: list[SarQueueItem] = Field(default_factory=list)
+
+
+class SarRebalanceRequest(BaseModel):
+    actor: str | None = None
+    queue: str = Field("all", pattern="^(draft|review|approval|all)$")
+    limit: int = Field(8, ge=1, le=100)
+    analyst_pool: list[str] = Field(default_factory=list)
+    breached_only: bool = True
+    include_due_soon: bool = True
+    max_items_per_owner: int | None = Field(None, ge=1, le=50)
+    min_workload_gap: int = Field(1, ge=1, le=10)
+
+
+class SarRebalanceItem(BaseModel):
+    case_id: UUID
+    case_ref: str
+    sar_id: UUID
+    sar_ref: str
+    queue: str
+    previous_owner: str | None = None
+    new_owner: str
+    previous_active_count: int = 0
+    new_owner_active_count: int = 0
+    sla_status: str | None = None
+    case_priority: str | None = None
+    note: str | None = None
+
+
+class SarRebalanceResponse(BaseModel):
+    queue: str
+    processed_count: int = 0
+    reassigned_count: int = 0
+    owner_count: int = 0
+    items: list[SarRebalanceItem] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+    generated_at: datetime
 
 
 class ScreenEntityRequest(BaseModel):

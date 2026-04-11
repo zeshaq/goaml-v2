@@ -1,0 +1,80 @@
+[
+  {
+    "name": "goAML SAR Queue Rebalance Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "triggerAtHour": 8,
+                "triggerAtMinute": 15
+              }
+            ]
+          }
+        },
+        "id": "d7b362b0-80d4-40ff-bd08-b8cf5401e6a3",
+        "name": "Daily Rebalance Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/sars/queue/rebalance",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"actor\":\"sar-queue-automation\",\"queue\":\"all\",\"limit\":8,\"breached_only\":true,\"include_due_soon\":true}"
+        },
+        "id": "6d2124e7-8f62-4022-9972-15ecc0bf3c74",
+        "name": "Run SAR Queue Rebalance",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Daily Rebalance Schedule": {
+        "main": [
+          [
+            {
+              "node": "Run SAR Queue Rebalance",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "a50ac8e8-d587-4f1e-9332-f6ac6d33b3c7"
+  }
+]

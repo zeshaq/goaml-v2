@@ -195,6 +195,14 @@ class EntityWatchlistState(BaseModel):
     removed_at: datetime | None = None
     case_id: UUID | None = None
     case_ref: str | None = None
+    rescreen_interval_days: int | None = None
+    last_screened_at: datetime | None = None
+    last_screened_by: str | None = None
+    next_screening_due_at: datetime | None = None
+    rescreen_status: str | None = None
+    last_match_count: int | None = None
+    last_screening_trigger: str | None = None
+    last_datasets: list[str] = Field(default_factory=list)
 
 
 class EntityMergeState(BaseModel):
@@ -245,6 +253,10 @@ class WatchlistDashboardCounts(BaseModel):
     removed: int = 0
     with_open_case: int = 0
     critical: int = 0
+    due_for_rescreen: int = 0
+    due_soon_rescreen: int = 0
+    overdue_rescreen: int = 0
+    screened_last_7d: int = 0
     total: int = 0
 
 
@@ -263,6 +275,13 @@ class WatchlistDashboardItem(BaseModel):
     watchlist_reason: str | None = None
     watchlist_added_by: str | None = None
     watchlist_added_at: datetime | None = None
+    rescreen_interval_days: int | None = None
+    last_screened_at: datetime | None = None
+    last_screened_by: str | None = None
+    next_screening_due_at: datetime | None = None
+    rescreen_status: str | None = None
+    last_match_count: int = 0
+    last_screening_trigger: str | None = None
     case_id: UUID | None = None
     case_ref: str | None = None
     linked_case_count: int = 0
@@ -276,6 +295,41 @@ class WatchlistDashboardResponse(BaseModel):
     status: str
     counts: WatchlistDashboardCounts
     items: list[WatchlistDashboardItem] = Field(default_factory=list)
+
+
+class WatchlistRescreenRequest(BaseModel):
+    actor: str | None = None
+    due_only: bool = True
+    limit: int = Field(20, ge=1, le=100)
+    interval_days: int | None = Field(None, ge=1, le=90)
+
+
+class WatchlistRescreenItem(BaseModel):
+    entity_id: UUID
+    name: str
+    watchlist_status: str | None = None
+    case_id: UUID | None = None
+    case_ref: str | None = None
+    match_count: int = 0
+    new_matches: int = 0
+    auto_escalated: bool = False
+    escalation_task_id: UUID | None = None
+    rescreen_status: str | None = None
+    last_screened_at: datetime | None = None
+    next_screening_due_at: datetime | None = None
+    trigger: str | None = None
+    datasets: list[str] = Field(default_factory=list)
+
+
+class WatchlistRescreenResponse(BaseModel):
+    scope: str
+    processed_count: int = 0
+    matched_count: int = 0
+    new_match_entity_count: int = 0
+    escalated_case_count: int = 0
+    items: list[WatchlistRescreenItem] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+    generated_at: datetime
 
 
 class DocumentAnalyzeRequest(BaseModel):

@@ -1,0 +1,73 @@
+[
+  {
+    "name": "goAML Watchlist Re-screen Daily Due",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "days",
+                "daysInterval": 1,
+                "triggerAtHour": 6,
+                "triggerAtMinute": 0
+              }
+            ]
+          }
+        },
+        "id": "db0d8e55-6037-48e9-8df1-28832a97454a",
+        "name": "Daily Due Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/entities/watchlist/rescreen",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"actor\":\"watchlist-automation\",\"due_only\":true,\"limit\":25}"
+        },
+        "id": "7232d8e4-6cf2-48cb-b077-ef7070b8085f",
+        "name": "Run Due Re-screen Batch",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Daily Due Schedule": {
+        "main": [
+          [
+            {
+              "node": "Run Due Re-screen Batch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "7ca613c5-20fb-4920-8a86-cdd31d6ff8d9"
+  }
+]

@@ -18,12 +18,15 @@ The platform is designed to handle:
 - sanctions and PEP screening
 - case management and timeline history
 - reviewer / approver SAR queues and filing workflows
+- reviewer workload balancing and SLA-driven queue automation
 - entity profile, watchlist, and merge resolution workflows
+- automatic watchlist case escalation when re-screening finds new matches
 - analyst collaboration through case notes and tasks
 - document OCR, parsing, PII extraction, and MinIO-backed evidence storage
 - graph and vector-assisted investigations with persisted Neo4j evidence
 - retrieval-backed investigation context and AI case summaries
 - workflow automation and analyst support
+- unattended watchlist re-screen automation through n8n schedules
 
 The current system is beyond planning. It is already running as a live multi-service deployment with working APIs, a browser-accessible analyst UI, live case workflows, case timelines, SAR preview/filing, and LLM-generated SAR drafts.
 
@@ -99,7 +102,7 @@ Important: this section contains active access details from the current deployme
 |---|---|---|---|
 | Analyst UI | `http://160.30.63.131/` | none configured yet | Main AML analyst UI. WSO2 identity is planned later. |
 | Superset | `http://160.30.63.131:8088` | `admin` / `Asdf@1234` | Analytics dashboards and BI. Admin user is created from the app-layer compose startup command. |
-| n8n | `http://160.30.63.131:5678` | no static user/pass configured in compose | Workflow UI is live. No `N8N_BASIC_AUTH_*` settings are present in the deployed compose, so access is currently governed by n8n's own app bootstrap/session model rather than a shared static credential in env. |
+| n8n | `http://160.30.63.131:5678` | no static user/pass configured in compose | Workflow UI is live. No `N8N_BASIC_AUTH_*` settings are present in the deployed compose, so access is currently governed by n8n's own app bootstrap/session model rather than a shared static credential in env. Active workflows now include daily due-only and weekly full watchlist re-screen jobs plus a weekday SAR queue rebalance workflow. |
 | Camunda | `http://160.30.63.131:8085/camunda/app/` | no explicit credential set in deployed env | BPMN workflow UI is live. The current compose file sets database connectivity only and does not define a custom app username/password. |
 | Neo4j Browser | `http://160.30.63.131:7474` | `neo4j` / `Asdf@1234` | Graph investigation and Cypher exploration UI. Bolt endpoint is `bolt://160.30.63.131:7687`. |
 | Attu | `http://160.30.63.131:8080` | no separate Attu login configured | Milvus admin UI. It connects to Milvus using `160.30.63.131:19530` or the internal service name `goaml-milvus:19530`. |
@@ -748,12 +751,15 @@ Completed or substantially completed:
 - graph drilldown, relationship evidence, and pathfinding from the analyst UI
 - entity profile workspace and watchlist dashboard
 - collaboration notes and tasks
+- unattended n8n watchlist re-screen schedules
+- automated SAR queue rebalancing from SLA analytics
+- automatic case escalation and follow-up task creation when watchlist re-screening finds new matches
 - seeded AML dataset for dense end-to-end workflow testing
 
 Still maturing in Phase 2:
 
 - graph/vector retrieval can be pushed deeper into analyst case workflows
-- workflow automation across n8n / Camunda is not yet driving day-to-day analyst actions
+- broader workflow automation across n8n / Camunda is still limited outside the watchlist re-screen runner
 
 ### Phase 3 — Model Integration
 
@@ -785,15 +791,22 @@ Already implemented in this phase:
 
 - SAR draft, review, approval, reject, and filing lifecycle
 - first-class reviewer / approver queues
+- reviewer / approver SLA dashboards and workload analytics
+- escalation routing by analyst team and inferred region
+- automated SAR queue workload rebalance through n8n
+- SLA breach notification dispatch and notification history tracking
 - entity watchlist dashboard and review-case entry points
+- recurring watchlist re-screen automation through n8n
+- automatic watchlist review-case escalation on new screening matches
+- formal Camunda orchestration for SAR review and watchlist escalation flows
+- dedicated analyst-facing Workflow Ops, n8n Monitor, and Camunda dashboards with live polling
 - entity merge and watchlist resolution workflows
 - analyst collaboration notes and tasks
 
 Still planned:
 
-- automated workflows through n8n and Camunda
-- reviewer / approver SLA dashboards and workload balancing
-- recurring watchlist review and re-screen workflows
+- broader automated workflows through n8n and Camunda beyond SAR and watchlist flows
+- additional recurring watchlist review playbooks beyond re-screening
 - richer entity merge confidence and entity resolution automation
 - deeper alert, case, and entity collaboration workflows
 
@@ -814,10 +827,10 @@ Planned:
 ### 12.1 Immediate Next Steps
 
 1. Push retrieval and rerank deeper into case evidence assembly and summaries
-2. Add reviewer / approver workload balancing, SLA views, and queue analytics
-3. Add recurring watchlist review and re-screen automation
-4. Extend graph actions and evidence packs deeper into end-to-end alert and document workflows
-5. Drive more analyst workflows through n8n, Camunda, and LangGraph orchestration
+2. Add workload balancing and escalation logic on top of the reviewer / approver SLA dashboards
+3. Extend graph actions and evidence packs deeper into end-to-end alert and document workflows
+4. Drive more analyst workflows through n8n, Camunda, and LangGraph orchestration
+5. Add recurring compliance playbooks beyond the watchlist re-screen runner
 
 ### 12.2 After That
 
@@ -834,8 +847,8 @@ Planned future enhancements likely to add the most value:
 - attachment support on alerts and SARs
 - LLM-assisted alert explanation
 - document evidence packs for SARs
-- reviewer / approver workload dashboards
-- recurring watchlist review and re-screen jobs
+- deeper queue balancing and SLA escalation automation
+- recurring watchlist review, re-screen, and downstream case escalation playbooks
 - automated entity merge suggestions
 - model routing between `Qwen3-8B` and `Qwen3-32B`
 - MLflow model/version visibility in the analyst app
@@ -926,5 +939,7 @@ If someone new joins the project today, the correct mental model is:
 - AI case summaries, graph exploration, pathfinding, and document intelligence are live in the analyst UI
 - dense seeded AML data is in place for realistic demos and workflow testing
 - reviewer / approver queues and the watchlist dashboard are now first-class analyst workspaces
-- Phase 4 workflow depth has started, but enterprise hardening and orchestration are still ahead
+- Workflow Ops, n8n Monitor, and Camunda dashboards are live in the analyst UI
+- Camunda is now tracking live goAML SAR and watchlist process instances with routed tasks
+- Phase 4 workflow depth is now materially real, while enterprise hardening is still ahead
 - the next work should focus on richer retrieval-assisted investigations, recurring review automation, workload analytics, and operational hardening

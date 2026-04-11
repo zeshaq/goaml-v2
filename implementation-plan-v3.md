@@ -134,6 +134,14 @@ Seed tooling:
 
 - [seed_aml_dataset.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/tools/seed_aml_dataset.py)
 
+Workflow automation assets:
+
+- [watchlist_rescreen_daily_due.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/watchlist_rescreen_daily_due.json)
+- [watchlist_rescreen_weekly_full.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/watchlist_rescreen_weekly_full.json)
+- [sar_queue_rebalance_daily.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/sar_queue_rebalance_daily.json)
+- [install_watchlist_rescreen_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_watchlist_rescreen_n8n.sh)
+- [install_sar_queue_rebalance_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_sar_queue_rebalance_n8n.sh)
+
 GPU model deployment copies:
 
 - [Qwen3-32B-FP8/docker-compose.yml](/Users/ze/Documents/goaml-v2/remote-gpu-01-models/Qwen3-32B-FP8/docker-compose.yml)
@@ -410,6 +418,38 @@ Result:
 - OCR health now reports CUDA mode
 - image-based document ingestion is using GPU-backed OCR
 
+### Step 15. Add routed workflow ops, notifications, and formal orchestration
+
+What was done:
+
+- added analyst team / region-aware routing metadata for cases, alerts, SAR queues, and watchlist workflows
+- added `notification_events` and `orchestration_runs` support tables in PostgreSQL
+- added workflow APIs for:
+  - workflow overview
+  - n8n dashboard data
+  - Camunda dashboard data
+  - SLA notification dispatch
+- added n8n automations for:
+  - daily watchlist due re-screen
+  - weekly full watchlist re-screen
+  - daily SAR queue rebalance
+  - daily SAR SLA notification dispatch
+- added Camunda BPMN deployments for:
+  - `goamlSarFormalReview`
+  - `goamlWatchlistEscalation`
+- wired SAR review submission and watchlist case creation into Camunda process starts
+- added live UI pages for:
+  - `Workflow Ops`
+  - `n8n Monitor`
+  - `Camunda`
+
+Result:
+
+- the analyst UI now exposes live automation and orchestration status
+- Camunda now tracks real goAML case-linked processes with routed tasks
+- SLA notifications now create auditable notification history even before Slack or SMTP credentials are configured
+- n8n is actively scheduled for recurring watchlist and SLA automation, even though manual ad hoc execution is still gated by n8n's own auth model
+
 ### Step 15. Implement persistent graph sync into Neo4j
 
 What was done:
@@ -635,6 +675,8 @@ The implemented platform now supports:
 - LLM SAR drafting
 - SAR review, approval, rejection, and filing
 - reviewer / approver work queues
+- reviewer / approver SLA analytics and workload dashboards
+- automated SAR queue rebalancing through n8n
 - sanctions screening without a commercial token
 - document OCR, parse, PII extraction, embedding, and vector indexing
 - MinIO-backed raw document storage
@@ -642,6 +684,8 @@ The implemented platform now supports:
 - persisted Neo4j graph sync, drilldown, and pathfinding
 - entity resolution, watchlist workflow, and merge workflow
 - watchlist dashboard and review-case visibility
+- recurring n8n-driven watchlist re-screen automation
+- automatic case escalation and task creation when watchlist re-screening finds new matches
 - dense seeded AML data for testing and demos
 
 ## 8. Remaining Work After This Implementation
@@ -651,8 +695,8 @@ The platform is already useful, but the following are still the main next steps:
 ### 8.1 Near-Term Engineering Work
 
 - deepen retrieval and rerank in case evidence assembly and summaries
-- add reviewer / approver workload balancing and SLA views
-- add recurring watchlist review and re-screen automation
+- add workload balancing and escalation logic on top of the SLA dashboards
+- expand recurring watchlist automation beyond the current re-screen jobs
 - drive more workflow actions through n8n, Camunda, and LangGraph
 - improve entity resolution confidence and duplicate automation
 
