@@ -1,0 +1,17 @@
+services:
+  gliner-pii:
+    build: .
+    container_name: goaml-pii
+    restart: unless-stopped
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+    ports:
+      - "8020:8020"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8020/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

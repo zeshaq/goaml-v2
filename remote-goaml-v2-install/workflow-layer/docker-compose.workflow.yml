@@ -1,0 +1,98 @@
+services:
+
+  # ─────────────────────────────────────────
+  # n8n — Workflow automation
+  # ─────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:1.44.1
+    container_name: goaml-n8n
+    restart: unless-stopped
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: goaml-postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-goaml}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-goaml}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD_RAW}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678
+      QUEUE_BULL_REDIS_HOST: goaml-redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      EXECUTIONS_MODE: queue
+      GENERIC_TIMEZONE: UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # n8n worker — processes queued jobs
+  # ─────────────────────────────────────────
+  n8n-worker:
+    image: n8nio/n8n:1.44.1
+    container_name: goaml-n8n-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: goaml-postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-goaml}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-goaml}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD_RAW}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      QUEUE_BULL_REDIS_HOST: goaml-redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      EXECUTIONS_MODE: queue
+      GENERIC_TIMEZONE: UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      n8n:
+        condition: service_healthy
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # Camunda — BPMN workflow engine
+  # ─────────────────────────────────────────
+  camunda:
+    image: camunda/camunda-bpm-platform:run-latest
+    container_name: goaml-camunda
+    restart: unless-stopped
+    environment:
+      DB_DRIVER: org.postgresql.Driver
+      DB_URL: jdbc:postgresql://goaml-postgres:5432/${POSTGRES_DB:-goaml}
+      DB_USERNAME: ${POSTGRES_USER:-goaml}
+      DB_PASSWORD: ${POSTGRES_PASSWORD_RAW}
+      WAIT_FOR: goaml-postgres:5432
+    ports:
+      - "8085:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/camunda/app/welcome/default/#!/welcome || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - goaml-network
+
+volumes:
+  n8n_data:
+
+networks:
+  goaml-network:
+    external: true

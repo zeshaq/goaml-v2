@@ -1,0 +1,217 @@
+"""
+goAML-V2 — Transaction database service
+Handles PostgreSQL writes for transactions and alerts
+"""
+
+from datetime import datetime
+from decimal import Decimal
+from uuid import UUID
+import json
+
+import asyncpg
+
+from core.database import get_pool
+from models.transaction import TransactionIngest, ScorerResponse
+from services.scorer import to_usd
+
+
+async def upsert_account(conn: asyncpg.Connection, account_ref: str) -> UUID | None:
+    """Ensure account exists, return its UUID."""
+    row = await conn.fetchrow(
+        "SELECT id FROM accounts WHERE account_number = $1",
+        account_ref,
+    )
+    if row:
+        return row["id"]
+    row = await conn.fetchrow(
+        """
+        INSERT INTO accounts (account_number, account_name)
+        VALUES ($1, $1)
+        ON CONFLICT (account_number) DO NOTHING
+        RETURNING id
+        """,
+        account_ref,
+    )
+    return row["id"] if row else None
+
+
+async def create_transaction(
+    txn: TransactionIngest,
+    score: ScorerResponse,
+) -> dict:
+    """
+    Write transaction to PostgreSQL.
+    Returns the created transaction record.
+    """
+    pool = get_pool()
+    amount_usd = to_usd(txn.amount, txn.currency)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+
+            # Upsert accounts
+            sender_id   = await upsert_account(conn, txn.sender_account_ref)
+            receiver_id = await upsert_account(conn, txn.receiver_account_ref)
+
+            # Insert transaction (trigger auto-generates transaction_ref)
+            row = await conn.fetchrow(
+                """
+                INSERT INTO transactions (
+                    external_id,
+                    transaction_type,
+                    status,
+                    sender_account_id,
+                    sender_account_ref,
+                    sender_name,
+                    sender_country,
+                    receiver_account_id,
+                    receiver_account_ref,
+                    receiver_name,
+                    receiver_country,
+                    amount,
+                    currency,
+                    amount_usd,
+                    risk_score,
+                    risk_level,
+                    risk_factors,
+                    ml_score_raw,
+                    ml_features,
+                    description,
+                    reference,
+                    channel,
+                    ip_address,
+                    device_id,
+                    metadata,
+                    transacted_at
+                ) VALUES (
+                    $1,$2::transaction_type,$3::transaction_status,
+                    $4,$5,$6,$7,$8,$9,$10,
+                    $11,$12,$13,$14,$15,$16::risk_level,$17,$18,$19,
+                    $20,$21,$22,$23,$24,$25,$26
+                )
+                RETURNING id, transaction_ref, created_at
+                """,
+                txn.external_id,
+                txn.transaction_type.value,
+                txn.status.value,
+                sender_id,
+                txn.sender_account_ref,
+                txn.sender_name,
+                txn.sender_country,
+                receiver_id,
+                txn.receiver_account_ref,
+                txn.receiver_name,
+                txn.receiver_country,
+                txn.amount,
+                txn.currency,
+                Decimal(str(round(amount_usd, 4))),
+                Decimal(str(score.risk_score)),
+                score.risk_level,
+                score.risk_factors,
+                score.risk_score,
+                json.dumps(score.features),
+                txn.description,
+                txn.reference,
+                txn.channel,
+                txn.ip_address,
+                txn.device_id,
+                json.dumps(txn.metadata),
+                txn.transacted_at,
+            )
+
+            # Update sender account risk score
+            if sender_id:
+                await conn.execute(
+                    """
+                    UPDATE accounts
+                    SET risk_score = GREATEST(risk_score, $1),
+                        risk_level = CASE
+                            WHEN GREATEST(risk_score, $1) >= 0.75 THEN 'high'::risk_level
+                            WHEN GREATEST(risk_score, $1) >= 0.45 THEN 'medium'::risk_level
+                            ELSE 'low'::risk_level
+                        END
+                    WHERE id = $2
+                    """,
+                    Decimal(str(score.risk_score)),
+                    sender_id,
+                )
+
+    return {
+        "id":              row["id"],
+        "transaction_ref": row["transaction_ref"],
+        "created_at":      row["created_at"],
+        "amount_usd":      amount_usd,
+        "sender_id":       sender_id,
+    }
+
+
+async def create_alert(
+    transaction_id: UUID,
+    transaction_ref: str,
+    account_id: UUID | None,
+    score: ScorerResponse,
+    amount_usd: float,
+) -> dict | None:
+    """
+    Create an alert in PostgreSQL if risk exceeds threshold.
+    Returns alert record or None.
+    """
+    from core.config import settings
+
+    if score.risk_score < settings.ALERT_THRESHOLD_MEDIUM:
+        return None
+
+    severity = "high" if score.risk_score >= settings.ALERT_THRESHOLD_HIGH else "medium"
+    alert_type = _pick_alert_type(score.risk_factors)
+    title = _build_alert_title(alert_type, score.risk_factors, amount_usd)
+
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO alerts (
+                alert_type, status, severity,
+                transaction_id, account_id,
+                title, description, evidence, rule_id
+            ) VALUES ($1::alert_type, 'open', $2::risk_level, $3, $4, $5, $6, $7, $8)
+            RETURNING id, alert_ref, created_at
+            """,
+            alert_type,
+            severity,
+            transaction_id,
+            account_id,
+            title,
+            f"ML risk score: {score.risk_score:.4f} · Factors: {', '.join(score.risk_factors)}",
+            json.dumps({"risk_score": score.risk_score, "risk_factors": score.risk_factors,
+                        "amount_usd": amount_usd, "transaction_ref": transaction_ref}),
+            "ml_scorer_v1",
+        )
+
+    return {
+        "id":        row["id"],
+        "alert_ref": row["alert_ref"],
+        "created_at": row["created_at"],
+    }
+
+
+def _pick_alert_type(factors: list[str]) -> str:
+    if "STRUCT" in factors:          return "structuring"
+    if "SANCT" in factors or "SANCTIONED_COUNTRY" in factors: return "sanctions_match"
+    if "CRYPTO" in factors:          return "crypto_mixing"
+    if "VELOCITY" in factors:        return "velocity"
+    if "GEO" in factors:             return "unusual_geography"
+    if "CASH" in factors:            return "large_cash"
+    return "ml_flag"
+
+
+def _build_alert_title(alert_type: str, factors: list[str], amount_usd: float) -> str:
+    titles = {
+        "structuring":      f"Structuring pattern detected · ${amount_usd:,.0f}",
+        "sanctions_match":  "Potential sanctions exposure detected",
+        "crypto_mixing":    f"Crypto transaction flagged · ${amount_usd:,.0f}",
+        "velocity":         "Abnormal transaction velocity",
+        "unusual_geography": "Unusual geographic pattern",
+        "large_cash":       f"Large cash transaction · ${amount_usd:,.0f}",
+        "ml_flag":          f"ML risk flag · score {' '.join(factors)}",
+    }
+    return titles.get(alert_type, "Transaction flagged by risk model")

@@ -1,0 +1,80 @@
+services:
+
+  # ─────────────────────────────────────────
+  # Apache Tika — Document extraction
+  # ─────────────────────────────────────────
+  tika:
+    image: apache/tika:3.3.0.0-full
+    container_name: goaml-tika
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9998/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # ElasticSearch — yente search backend
+  # ─────────────────────────────────────────
+  elasticsearch:
+    image: elasticsearch:8.13.4
+    container_name: goaml-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # yente — OpenSanctions screening API
+  # ─────────────────────────────────────────
+  yente:
+    image: ghcr.io/opensanctions/yente:latest
+    container_name: goaml-yente
+    restart: unless-stopped
+    environment:
+      # Use the built-in public OpenSanctions catalog manifest so screening works
+      # without a commercial delivery token.
+      YENTE_MANIFEST: /app/manifests/civic.yml
+      YENTE_ELASTICSEARCH_URL: http://elasticsearch:9200
+      YENTE_ENDPOINT_URL: http://localhost:8000
+      OPENSANCTIONS_DELIVERY_TOKEN: ${OPENSANCTIONS_DELIVERY_TOKEN:-}
+    volumes:
+      - yente_data:/var/lib/yente
+    ports:
+      - "8383:8000"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - goaml-network
+
+volumes:
+  elasticsearch_data:
+  yente_data:
+
+networks:
+  goaml-network:
+    external: true

@@ -1,0 +1,76 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: goaml-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-goaml}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goaml_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-goaml}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-goaml}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goaml-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: goaml-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-goaml}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-goaml_secret}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-goaml}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # Native client
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user ${CLICKHOUSE_USER:-goaml} --password ${CLICKHOUSE_PASSWORD:-goaml_secret} --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goaml-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: goaml-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-goaml_secret}
+      --maxmemory 4gb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-goaml_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goaml-network
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  clickhouse_logs:
+  redis_data:
+
+networks:
+  goaml-network:
+    external: true

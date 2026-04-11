@@ -1,0 +1,31 @@
+services:
+  qwen3-8b:
+    image: vllm/vllm-openai:latest
+    container_name: goaml-llm-fast
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+      - HF_HOME=/root/.cache/huggingface
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    ports:
+      - "8002:8002"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ipc: host
+    command: >
+      --model Qwen/Qwen3-8B-FP8
+      --host 0.0.0.0
+      --port 8002
+      --max-model-len 32768
+      --gpu-memory-utilization 0.40
+      --enable-prefix-caching
+      --reasoning-parser qwen3
+      --default-chat-template-kwargs '{"enable_thinking": false}'
+      --served-model-name qwen3-8b-instruct
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

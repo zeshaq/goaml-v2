@@ -1,0 +1,102 @@
+services:
+
+  # ─────────────────────────────────────────
+  # MLflow — ML experiment tracking & model registry
+  # Builds on official image, adds psycopg2 + boto3
+  # ─────────────────────────────────────────
+  mlflow:
+    image: goaml-mlflow:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: goaml-mlflow
+    restart: unless-stopped
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER:-goaml}:${POSTGRES_PASSWORD}@goaml-postgres:5432/${POSTGRES_DB:-goaml}
+      --artifacts-destination s3://mlflow-artifacts
+      --host 0.0.0.0
+      --port 5000
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://goaml-minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # LangGraph — Agent workflow runtime
+  # Self-hosted via FastAPI + langgraph package
+  # ─────────────────────────────────────────
+  langgraph:
+    image: goaml-langgraph:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.langgraph
+    container_name: goaml-langgraph
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@goaml-redis:6379/2
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-goaml}:${POSTGRES_PASSWORD}@goaml-postgres:5432/${POSTGRES_DB:-goaml}
+      LLM_PRIMARY_URL: http://160.30.63.152:8000/v1
+      LLM_FAST_URL: http://160.30.63.152:8002/v1
+      EMBED_URL: http://160.30.63.152:8001/v1
+      RERANK_URL: http://160.30.63.152:8003/v1
+      PARSE_URL: http://160.30.63.152:8022/v1
+      OCR_URL: http://160.30.63.152:8021
+      PII_URL: http://160.30.63.152:8020
+      SCORER_URL: http://160.30.63.152:8010
+      # Compatibility aliases for older code paths
+      LLM_BASE_URL: http://160.30.63.152:8000/v1
+      LLM_FAST_BASE_URL: http://160.30.63.152:8002/v1
+      EMBED_BASE_URL: http://160.30.63.152:8001/v1
+      RERANK_BASE_URL: http://160.30.63.152:8003/v1
+      TRITON_URL: http://160.30.63.152:8010
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - goaml-network
+
+  # ─────────────────────────────────────────
+  # MCP Server — Model Context Protocol server
+  # ─────────────────────────────────────────
+  mcp-server:
+    image: goaml-mcp-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: goaml-mcp-server
+    restart: unless-stopped
+    environment:
+      POSTGRES_URI: postgresql://${POSTGRES_USER:-goaml}:${POSTGRES_PASSWORD}@goaml-postgres:5432/${POSTGRES_DB:-goaml}
+      NEO4J_URI: bolt://goaml-neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8200/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - goaml-network
+
+networks:
+  goaml-network:
+    external: true

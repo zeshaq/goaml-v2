@@ -1,0 +1,31 @@
+services:
+  nemotron-rerank:
+    image: vllm/vllm-openai:latest
+    container_name: goaml-rerank
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+      - HF_HOME=/root/.cache/huggingface
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    ports:
+      - "8003:8003"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ipc: host
+    command: >
+      --model nvidia/llama-nemotron-rerank-1b-v2
+      --host 0.0.0.0
+      --port 8003
+      --runner pooling
+      --trust-remote-code
+      --dtype bfloat16
+      --max-model-len 8192
+      --gpu-memory-utilization 0.25
+      --served-model-name llama-nemotron-rerank-1b-v2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

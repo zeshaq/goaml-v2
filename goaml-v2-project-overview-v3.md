@@ -1,6 +1,6 @@
 # goAML-v2 Project Overview v3
 
-> Current-state architecture and implementation guide for the goAML-v2 AML analytics platform, updated with the live deployment, Phase 2 backend/UI work, public OpenSanctions screening path, and Qwen-backed SAR drafting.
+> Current-state architecture and implementation guide for the goAML-v2 AML analytics platform, updated with the live deployment, Phase 2 backend/UI work, public OpenSanctions screening path, Qwen-backed SAR drafting, first-class SAR reviewer/approver queues, and the entity watchlist dashboard.
 
 ## 1. Executive Summary
 
@@ -17,9 +17,12 @@ The platform is designed to handle:
 - alert triage and investigation
 - sanctions and PEP screening
 - case management and timeline history
-- SAR drafting and filing workflows
-- document OCR, parsing, and PII extraction
-- graph and vector-assisted investigations
+- reviewer / approver SAR queues and filing workflows
+- entity profile, watchlist, and merge resolution workflows
+- analyst collaboration through case notes and tasks
+- document OCR, parsing, PII extraction, and MinIO-backed evidence storage
+- graph and vector-assisted investigations with persisted Neo4j evidence
+- retrieval-backed investigation context and AI case summaries
 - workflow automation and analyst support
 
 The current system is beyond planning. It is already running as a live multi-service deployment with working APIs, a browser-accessible analyst UI, live case workflows, case timelines, SAR preview/filing, and LLM-generated SAR drafts.
@@ -186,11 +189,14 @@ flowchart LR
     C --> D[Assign analyst]
     D --> E[Create or reopen case]
     E --> F[Case timeline]
-    F --> G[Update case status and summary]
-    G --> H[Draft SAR]
-    H --> I[SAR preview]
-    I --> J[Review and file SAR]
-    J --> K[Case status becomes sar_filed]
+    F --> G[Case notes, tasks, and graph evidence]
+    G --> H[AI summary and investigation context]
+    H --> I[Draft SAR]
+    I --> J[SAR preview]
+    J --> K[Submit for review]
+    K --> L[Approve or reject]
+    L --> M[File SAR]
+    M --> N[Case status becomes sar_filed]
 ```
 
 ### 5.3 Document Intelligence Workflow
@@ -204,7 +210,9 @@ flowchart LR
     E --> F[Embeddings]
     F --> G[Milvus retrieval]
     G --> H[Rerank]
-    H --> I[LLM-assisted investigation context]
+    H --> I[Case context and AI summary]
+    A --> J[MinIO raw file storage]
+    J --> K[Document detail and case attachment]
 ```
 
 ### 5.4 Screening Workflow
@@ -215,9 +223,58 @@ flowchart LR
     B --> C[Yente]
     C --> D[OpenSanctions public catalog]
     C --> E[Elasticsearch index]
-    E --> F[Search results]
-    F --> G[screening_results table]
-    G --> H[Analyst UI screening panel]
+    C --> F[OFAC XML fallback if needed]
+    E --> G[Search results]
+    F --> G
+    G --> H[screening_results table]
+    H --> I[Entity profile and watchlist workflow]
+```
+
+### 5.5 Investigation Context Workflow
+
+```mermaid
+flowchart LR
+    A[Case opened] --> B[Linked alerts and transactions]
+    A --> C[Direct case documents]
+    A --> D[Screening hits]
+    A --> E[Persisted Neo4j graph]
+    C --> F[Embeddings search in Milvus]
+    F --> G[Rerank]
+    B --> H[Case context assembler]
+    D --> H
+    E --> H
+    G --> H
+    H --> I[Analyst evidence panel]
+    H --> J[Qwen3-32B AI case summary]
+```
+
+### 5.6 Entity Resolution and Watchlist Workflow
+
+```mermaid
+flowchart LR
+    A[Entity screening or analyst review] --> B[Entity profile workspace]
+    B --> C[Watchlist confirm / PEP / sanctions confirm]
+    B --> D[Open watchlist review case]
+    B --> E[Add note]
+    B --> F[Merge duplicate candidate]
+    C --> G[Watchlist dashboard]
+    D --> G
+    F --> H[Linked accounts, cases, docs consolidated]
+    G --> I[Open review case from dashboard]
+```
+
+### 5.7 Persisted Graph Workflow
+
+```mermaid
+flowchart LR
+    A[PostgreSQL AML records] --> B[Graph sync]
+    B --> C[Neo4j persisted graph]
+    C --> D[Graph explore]
+    C --> E[Graph drilldown]
+    C --> F[Pathfinding]
+    D --> G[Cases workspace]
+    E --> G
+    F --> G
 ```
 
 ## 6. Database Model
@@ -236,6 +293,8 @@ Core business tables verified in schema and/or live database:
 - `case_alerts`
 - `case_transactions`
 - `case_events`
+- `case_notes`
+- `case_tasks`
 - `sar_reports`
 - `documents`
 - `screening_results`
@@ -268,14 +327,14 @@ erDiagram
 
 | Model / Service | Current role |
 |---|---|
-| `Qwen3-32B` | Live SAR drafting, future investigative summaries |
-| `Qwen3-8B` | Reserved for fast inference and lighter future tasks |
-| `Nemotron Embed` | Planned semantic retrieval and vector indexing |
-| `Nemotron Rerank` | Planned retrieval quality improvement |
-| `Nemotron Parse` | Planned structured document extraction |
-| OCR service | Planned scanned document ingestion |
-| GLiNER PII | Planned entity/PII extraction from docs/text |
-| XGBoost scorer | Live risk scoring support path |
+| `Qwen3-32B` | Live SAR drafting and live AI case summary generation |
+| `Qwen3-8B` | Deployed fast LLM reserved for lighter triage and future low-latency summarization |
+| `Nemotron Embed` | Live document embedding generation, Milvus indexing, and semantic retrieval for case context |
+| `Nemotron Rerank` | Live reranking in retrieval-backed investigation context |
+| `Nemotron Parse` | Live structured document extraction path in document analysis |
+| OCR service | Live GPU-backed image OCR for analyst uploads on `gpu-01` |
+| GLiNER PII | Live entity and PII extraction from uploaded documents/text |
+| XGBoost scorer | Live transaction risk scoring support path |
 
 ### 7.2 API Endpoints to GPU Host
 
@@ -302,8 +361,24 @@ Live UI features now include:
 
 - dashboard shell
 - transactions view
+- transaction investigation workspace
 - alerts view
+- alert resolution workspace with analyst notes
 - cases and SARs view
+- AI case summary generation
+- investigation context with direct documents, retrieved evidence, screening hits, and graph context
+- SAR reviewer / approver queue
+- case collaboration notes and task management
+- entity profile and resolution workspace
+- entity watchlist dashboard
+- watchlist case creation and reuse
+- entity merge candidate review and merge actions
+- entity screening with live sanctions results
+- network graph exploration
+- graph drilldown and case-centric pathfinding
+- direct graph actions from cases, alerts, transactions, and document graph candidates
+- document intelligence workspace
+- MinIO-backed case evidence uploads and document attachments
 - case timeline panel
 - case action panel
 - SAR preview drawer
@@ -315,18 +390,45 @@ Verified working:
 
 - `GET /health`
 - `GET /api/v1/status`
+- `POST /api/v1/transactions`
 - `GET /api/v1/transactions`
+- `GET /api/v1/transactions/{id}`
 - `GET /api/v1/alerts`
+- `PATCH /api/v1/alerts/{id}`
 - `GET /api/v1/alerts/{id}`
 - `POST /api/v1/alerts/{id}/investigate`
+- `POST /api/v1/alerts/{id}/actions`
+- `POST /api/v1/screen`
+- `GET /api/v1/sars/queue`
 - `GET /api/v1/cases`
 - `POST /api/v1/cases`
 - `GET /api/v1/cases/{id}`
 - `PATCH /api/v1/cases/{id}`
 - `GET /api/v1/cases/{id}/events`
+- `GET /api/v1/cases/{id}/context`
+- `POST /api/v1/cases/{id}/summary`
+- `GET /api/v1/cases/{id}/tasks`
+- `POST /api/v1/cases/{id}/tasks`
+- `PATCH /api/v1/cases/{id}/tasks/{task_id}`
+- `GET /api/v1/cases/{id}/notes`
+- `POST /api/v1/cases/{id}/notes`
 - `POST /api/v1/cases/{id}/sar`
+- `POST /api/v1/cases/{id}/sar/review`
 - `GET /api/v1/cases/{id}/sar`
 - `POST /api/v1/cases/{id}/sar/file`
+- `GET /api/v1/documents`
+- `GET /api/v1/documents/{id}`
+- `POST /api/v1/documents/analyze`
+- `POST /api/v1/cases/{id}/documents/analyze`
+- `POST /api/v1/cases/{id}/documents/{document_id}/attach`
+- `GET /api/v1/entities`
+- `GET /api/v1/entities/watchlist`
+- `GET /api/v1/entities/{id}`
+- `POST /api/v1/entities/{id}/resolve`
+- `POST /api/v1/graph/explore`
+- `POST /api/v1/graph/drilldown`
+- `POST /api/v1/graph/pathfind`
+- `POST /api/v1/graph/sync`
 
 ### 8.3 Live Case Workflow Already Verified
 
@@ -355,19 +457,142 @@ Verified SAR:
 
 This confirms the SAR narrative is currently being drafted by the live GPU-hosted LLM, not only by a template fallback.
 
+### 8.5 AI Investigation Context and Summary Verified
+
+Verified live:
+
+- `GET /api/v1/cases/{id}/context` returns:
+  - linked alerts
+  - linked transactions
+  - direct case documents
+  - screening hits
+  - semantically retrieved documents from Milvus
+  - reranked evidence
+  - graph expansion from Neo4j
+- `POST /api/v1/cases/{id}/summary` generates and stores:
+  - `ai_summary`
+  - `ai_risk_factors`
+  - `ai_summary_generated` case event
+
+This confirms the analyst workspace already has retrieval-backed case context plus an LLM summary layer, not just manual case notes.
+
+### 8.6 Reviewer / Approver and Watchlist Queues Verified
+
+Verified queue state after the latest pristine reseed:
+
+- SAR review queue counts:
+  - draft/rejected: `0`
+  - pending review: `4`
+  - approved / ready to file: `4`
+  - filed: `10`
+  - total SARs: `18`
+- example review queue case refs:
+  - `CASE-SD-0016`
+  - `CASE-SD-0015`
+  - `CASE-SD-0014`
+- example approval queue case refs:
+  - `CASE-SD-0012`
+  - `CASE-SD-0011`
+  - `CASE-SD-0010`
+
+Verified watchlist dashboard state after the latest pristine reseed:
+
+- active watchlist entities: `12`
+- removed watchlist entities: `0`
+- active watchlist entities with open review cases: `2`
+- critical watchlist entities: `6`
+- total watchlist entities: `12`
+- example watchlist entities:
+  - `East Pier Exports PLC`
+  - `Atlas Capital Pte Ltd`
+  - `Harborline Ventures PLC`
+  - `Farah Habib`
+  - `Sajid Latif`
+- example open review cases linked from the watchlist:
+  - `CASE-SD-0037`
+  - `CASE-SD-0036`
+
+### 8.7 Screening, Graph, and Documents Verified
+
+Verified live:
+
+- `POST /api/v1/screen` returns public-source sanctions matches without a commercial delivery token
+- `POST /api/v1/graph/explore` returns connected graph data for cases, alerts, transactions, and screening hits
+- `POST /api/v1/graph/drilldown` returns persisted Neo4j relationship evidence for cases, alerts, transactions, accounts, documents, and screening hits
+- `POST /api/v1/graph/pathfind` returns case-centric and counterparty paths across the persisted Neo4j graph
+- `POST /api/v1/graph/sync` maintains a persisted investigation graph from PostgreSQL into Neo4j
+- `POST /api/v1/documents/analyze` stores analyst-submitted documents with:
+  - OCR support for image uploads
+  - structured extraction
+  - PII/entity extraction
+  - embedding generation
+  - Milvus vector indexing
+- `POST /api/v1/cases/{id}/documents/analyze` stores raw files in MinIO and attaches them directly to the case
+- `POST /api/v1/cases/{id}/documents/{document_id}/attach` links previously analyzed documents into case evidence
+
+Verified document example:
+
+- document id `55d235c4-c19a-48da-8c82-5d95cf4e45bd`
+- `vector_status: embedded_in_milvus`
+- `pii_detected: true`
+- `parse_applied: true`
+
+Verified OCR smoke-test example:
+
+- document id `2a465a79-52c0-40ed-908a-4b7320ca1ee3`
+- `ocr_applied: true`
+- `parse_applied: true`
+- `pii_detected: true`
+- `vector_status: embedded_in_milvus`
+- OCR response mode currently: `cuda`
+
+### 8.8 Dense Seed Dataset Verified
+
+The platform now includes a large seeded AML investigation dataset for demos, testing, and analyst workflow validation.
+
+Latest verified seed batch:
+
+- seed tag: `synthetic_aml_dense_v1`
+- accounts: `60`
+- entities: `48`
+- transactions: `756`
+- alerts: `160`
+- cases: `42`
+- documents: `108`
+- screening results: `120`
+- SARs: `16`
+- persisted Neo4j graph: `1365` nodes and `3251` edges
+
+This dataset is safe to refresh because the seed workflow only replaces prior rows created by the same seed tag and leaves unrelated live data untouched.
+
 ## 9. Latest Changes Implemented So Far
 
 ### 9.1 Phase 2 Backend Extensions
 
 Implemented:
 
+- transaction ingest, scoring, alert generation, and transaction detail APIs
 - alert detail endpoint
 - alert investigation action
+- alert resolution actions for dismiss, false positive, escalate, and analyst notes
 - case create/list/detail/update
 - case timeline endpoint
+- case investigation context endpoint
+- AI case summary endpoint
+- case collaboration note and task endpoints
 - SAR draft endpoint
+- SAR review / approval endpoint
 - SAR file endpoint
+- SAR reviewer / approver queue endpoint
 - SAR read/preview endpoint
+- document list/detail/analyze endpoints
+- case document analyze and attach endpoints
+- entity list endpoint
+- entity profile endpoint
+- entity resolution endpoint
+- entity watchlist dashboard endpoint
+- graph explore endpoint
+- graph sync endpoint
 - screening endpoint with better error handling
 
 ### 9.2 UI Enhancements
@@ -375,16 +600,33 @@ Implemented:
 Implemented:
 
 - live transactions from API
+- transaction investigation workspace
 - live alerts from API
+- alert resolution workspace
 - live cases from API
 - case detail panel
 - case timeline rendering
 - case status update
 - case assignment update
+- case notes and team tasks panel
 - SAR draft action
+- SAR review / approve / reject actions
 - SAR file action
+- dedicated SAR review queue page
 - alert `Investigate` button
 - SAR preview drawer
+- entity profile and entity resolution workspace
+- watchlist dashboard page with open-case links
+- graph canvas and graph summary panel
+- graph drilldown and pathfinding panels
+- direct graph launch from alerts and transactions
+- document analysis workspace
+- OCR smoke-test path from the UI
+- one-click graph exploration from document graph candidates
+- case evidence attachment from retrieved documents
+- AI case summary action in the case workspace
+- entity watchlist case actions
+- entity merge workflow controls
 
 ### 9.3 Screening Fix
 
@@ -396,14 +638,46 @@ Implemented:
 Alternative implemented:
 
 - switched `yente` to the built-in public `civic.yml` manifest
-- public OpenSanctions indexing is now in progress
-- app now returns a clean `503` warm-up message instead of a raw `500`
+- screening now works against public-source matches without a commercial token
+- OFAC-style fallback logic is available if upstream screening is temporarily unavailable
+- the app still has graceful fallback behavior if indexing or upstream search is temporarily unavailable
 
-### 9.4 Model Integration Fix
+### 9.4 Intelligence and Graph Implementation
 
-App-side model URLs were aligned to the real GPU host instead of stale internal names.
+Implemented:
 
-### 9.5 Runtime Hardening During This Work
+- MinIO-backed raw document storage
+- Milvus vector indexing for analyzed documents
+- retrieval-backed case context using embeddings and rerank
+- persisted Neo4j graph synchronization from PostgreSQL
+- graph exploration, drilldown, and pathfinding APIs
+- direct graph evidence launch from cases, alerts, transactions, and document candidates
+- AI case summaries stored back onto cases with risk factors
+
+### 9.5 Entity Resolution and Watchlist Workflows
+
+Implemented:
+
+- watchlist confirmation
+- PEP confirmation
+- sanctions confirmation
+- entity notes and resolution history
+- create or reuse watchlist review case
+- remove from watchlist
+- duplicate candidate review
+- duplicate merge workflow with linked-record consolidation
+- watchlist dashboard with open-case counts
+
+### 9.6 Model Integration Fix
+
+Implemented:
+
+- app-side model URLs aligned to the real GPU host instead of stale internal names
+- OCR container corrected to run in true CUDA mode on `gpu-01`
+- Qwen3-32B wired into SAR drafting and AI case summaries
+- embedding, rerank, parse, PII, and scorer URLs aligned to the live inference host
+
+### 9.7 Runtime Hardening During This Work
 
 Fixed:
 
@@ -412,32 +686,36 @@ Fixed:
 - SAR filing state transition
 - case/SAR UI workflow continuity
 - duplicate-case prevention on repeated alert investigation
+- persisted Neo4j graph synchronization plus graph-first analyst workflows
+- safe dense-data seeding for demo and workflow validation
 
 ## 10. Screening Without an OpenSanctions API Key
 
 You said you do not have an OpenSanctions API key. The practical alternative now in place is:
 
 - use the public OpenSanctions data catalog via `yente`'s built-in `civic.yml`
+- keep OFAC-style fallback matching logic available inside the app
 - no delivery token required
-- slower first-time indexing
-- once indexing completes, screening works against public data
+- slower first-time indexing on first startup
+- once the public catalog is indexed, screening works against public data
 
 Current state:
 
-- indexing is still running
-- app correctly reports that screening is warming up
+- public-data screening is live
+- `/api/v1/screen` is returning real matches
+- fallback handling remains in place for resilience during future re-index cycles
 
 Recommended follow-up after indexing completes:
 
-1. verify `/api/v1/screen` returns real results
-2. keep public catalog for now
+1. keep the public catalog for now
+2. optionally add recurring re-screen jobs and screening watchlists
 3. only move to delivery token later if you need fresher or broader managed datasets
 
 ## 11. Implementation Phases
 
 ### Phase 1 — Infrastructure and Base Platform
 
-Status: complete enough to run live
+Status: complete and live
 
 Included:
 
@@ -448,7 +726,7 @@ Included:
 
 ### Phase 2 — Integration and Data Wiring
 
-Status: largely implemented
+Status: implemented and live for core analyst workflows
 
 Completed or substantially completed:
 
@@ -457,41 +735,67 @@ Completed or substantially completed:
 - ClickHouse schema
 - case workflows
 - alert investigation flow
+- alert resolution flow with analyst notes
 - case timelines
 - SAR draft and file flow
 - analyst UI wiring for alerts/cases/SARs
+- analyst UI wiring for screening, graph exploration, and document intelligence
+- document registry backed by PostgreSQL
+- raw document storage in MinIO
+- embedding generation and Milvus vector write path
+- direct case document attachment workflow
+- persistent Neo4j graph synchronization from PostgreSQL
+- graph drilldown, relationship evidence, and pathfinding from the analyst UI
+- entity profile workspace and watchlist dashboard
+- collaboration notes and tasks
+- seeded AML dataset for dense end-to-end workflow testing
 
 Still maturing in Phase 2:
 
-- screening needs the public index build to finish
-- graph page is still mostly a placeholder
-- document ingestion UI is not complete
+- graph/vector retrieval can be pushed deeper into analyst case workflows
+- workflow automation across n8n / Camunda is not yet driving day-to-day analyst actions
 
 ### Phase 3 — Model Integration
 
-Status: started
+Status: materially implemented and live
 
 Completed:
 
 - app connected to `Qwen3-32B` for live SAR narrative drafting
+- app connected to `Qwen3-32B` for live AI case summaries
+- app connected to public-source sanctions screening through `yente`
+- app connected to GLiNER PII for live document/entity extraction
+- app connected to embeddings for Milvus-backed document indexing
+- app connected to rerank for retrieval-backed case context
+- app connected to CUDA-backed OCR for image-based document ingestion
+- app connected to parse for structured extraction
+- app connected to XGBoost scoring for transaction monitoring
 
 Planned next in Phase 3:
 
-- connect embeddings for document indexing
-- connect rerank for evidence selection
-- connect Parse and OCR into document ingestion
-- connect PII extraction into document/entity workflows
+- deepen OCR and Parse usage for harder semi-structured and multilingual document ingestion
+- connect PII extraction outputs into entity resolution workflows
 - expand `Qwen3-8B` usage for fast triage and summarization
 
 ### Phase 4 — Workflow and Investigation Depth
 
-Planned:
+Status: started, but not yet complete
 
-- richer alert actions: dismiss, false positive, escalate
-- document upload and attachment handling
-- graph exploration tied to real entities and cases
-- review/approval stages before SAR filing
+Already implemented in this phase:
+
+- SAR draft, review, approval, reject, and filing lifecycle
+- first-class reviewer / approver queues
+- entity watchlist dashboard and review-case entry points
+- entity merge and watchlist resolution workflows
+- analyst collaboration notes and tasks
+
+Still planned:
+
 - automated workflows through n8n and Camunda
+- reviewer / approver SLA dashboards and workload balancing
+- recurring watchlist review and re-screen workflows
+- richer entity merge confidence and entity resolution automation
+- deeper alert, case, and entity collaboration workflows
 
 ### Phase 5 — Enterprise Hardening
 
@@ -509,33 +813,33 @@ Planned:
 
 ### 12.1 Immediate Next Steps
 
-1. Wait for `yente` public index build to complete and verify live screening
-2. Surface screening warm-up state more nicely in the UI
-3. Add alert dismissal / false-positive / escalation actions
-4. Add SAR review / approve states before filing
-5. Add document upload and OCR/Parse/PII workflow
+1. Push retrieval and rerank deeper into case evidence assembly and summaries
+2. Add reviewer / approver workload balancing, SLA views, and queue analytics
+3. Add recurring watchlist review and re-screen automation
+4. Extend graph actions and evidence packs deeper into end-to-end alert and document workflows
+5. Drive more analyst workflows through n8n, Camunda, and LangGraph orchestration
 
 ### 12.2 After That
 
-1. Plug embeddings and rerank into document/case retrieval
-2. Connect graph workflows to Neo4j
-3. Add LangGraph-driven investigation support
-4. Add MLflow-backed model version visibility in the app
-5. Introduce WSO2 identity when ready
+1. Improve entity resolution confidence scoring and duplicate automation
+2. Add MLflow-backed model version visibility in the app
+3. Introduce WSO2 identity when ready
+4. Add role-aware approvals and audit controls
+5. Expand dashboard drill-downs into ClickHouse and Superset
 
 ## 13. Future Enhancements
 
 Planned future enhancements likely to add the most value:
 
-- case note system and analyst collaboration
-- attachment support on alerts, cases, and SARs
-- entity profile pages with screening and graph context
-- retrieval-augmented case summarization
+- attachment support on alerts and SARs
 - LLM-assisted alert explanation
 - document evidence packs for SARs
-- human-in-the-loop review queues
+- reviewer / approver workload dashboards
+- recurring watchlist review and re-screen jobs
+- automated entity merge suggestions
 - model routing between `Qwen3-8B` and `Qwen3-32B`
-- screening watchlists and recurring re-screen jobs
+- MLflow model/version visibility in the analyst app
+- role-aware approval policies
 - dashboard drill-downs into ClickHouse analytics
 
 ## 14. End-to-End System Map
@@ -547,6 +851,8 @@ flowchart TD
     B --> D[Screening]
     B --> E[Case management]
     B --> F[Document pipeline]
+    B --> G[Entity resolution]
+    B --> H[Graph sync]
 
     C --> C1[XGBoost scorer]
     C1 --> C2[Alerts]
@@ -557,10 +863,14 @@ flowchart TD
 
     E --> E1[Cases]
     E1 --> E2[Case events]
-    E1 --> E3[SAR draft]
-    E3 --> E4[Qwen3-32B]
-    E4 --> E5[SAR preview]
-    E5 --> E6[SAR filing]
+    E1 --> E3[Case context]
+    E3 --> E4[Qwen3-32B summary]
+    E1 --> E5[SAR draft]
+    E5 --> E6[Qwen3-32B]
+    E6 --> E7[SAR preview]
+    E7 --> E8[Review queue]
+    E8 --> E9[Approval queue]
+    E9 --> E10[SAR filing]
 
     F --> F1[Tika]
     F --> F2[OCR]
@@ -569,11 +879,22 @@ flowchart TD
     F4 --> F5[Embeddings]
     F5 --> F6[Milvus]
     F6 --> F7[Rerank]
+    F --> F8[MinIO]
+
+    G --> G1[Entity profile]
+    G1 --> G2[Watchlist dashboard]
+    G1 --> G3[Merge and review actions]
+
+    H --> H1[Neo4j]
+    H1 --> H2[Explore, drilldown, pathfind]
 
     C2 --> UI[Analyst UI]
     D3 --> UI
     E2 --> UI
-    E5 --> UI
+    E4 --> UI
+    E7 --> UI
+    G2 --> UI
+    H2 --> UI
 ```
 
 ## 15. Source of Truth Files
@@ -600,6 +921,10 @@ If someone new joins the project today, the correct mental model is:
 - the platform is already deployed and usable
 - the app and GPU model planes are cleanly separated
 - Phase 2 is mostly real, not aspirational
-- sanctions screening no longer needs a commercial token, but the first public index build is still running
+- sanctions screening no longer needs a commercial token and is already returning live public-data matches
 - SAR drafting is already using `Qwen3-32B`
-- the next work should focus on completing screening, document workflows, richer alert actions, and review-grade SAR workflows
+- AI case summaries, graph exploration, pathfinding, and document intelligence are live in the analyst UI
+- dense seeded AML data is in place for realistic demos and workflow testing
+- reviewer / approver queues and the watchlist dashboard are now first-class analyst workspaces
+- Phase 4 workflow depth has started, but enterprise hardening and orchestration are still ahead
+- the next work should focus on richer retrieval-assisted investigations, recurring review automation, workload analytics, and operational hardening

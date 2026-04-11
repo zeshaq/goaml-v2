@@ -1,6 +1,6 @@
 # goAML-V2 — AML Intelligence Platform
 
-> Anti-Money Laundering intelligence platform built on a multi-service architecture integrating ML inference, document intelligence, graph analytics, and workflow automation for financial crime detection.
+> Anti-Money Laundering intelligence platform built on a split deployment: application and analytics services on `goaml-v2`, with model inference services on `gpu-01`.
 
 ---
 
@@ -8,238 +8,239 @@
 
 1. [Project Overview](#1-project-overview)
 2. [Infrastructure](#2-infrastructure)
-3. [Architecture](#3-architecture)
-4. [ML / NIM Stack](#4-ml--nim-stack)
-5. [Service Layers](#5-service-layers)
-6. [Port Reference](#6-port-reference)
-7. [Docker Deployment](#7-docker-deployment)
-8. [Environment Variables](#8-environment-variables)
-9. [Data Flow](#9-data-flow)
-10. [API Reference](#10-api-reference)
+3. [Current State](#3-current-state)
+4. [Architecture](#4-architecture)
+5. [ML / Inference Stack](#5-ml--inference-stack)
+6. [Service Layers](#6-service-layers)
+7. [Port Reference](#7-port-reference)
+8. [Docker Deployment](#8-docker-deployment)
+9. [Environment Variables](#9-environment-variables)
+10. [Data Flow](#10-data-flow)
 11. [Roadmap](#11-roadmap)
 
 ---
 
 ## 1. Project Overview
 
-goAML-V2 is a self-hosted, GPU-accelerated AML intelligence platform designed for financial crime detection, entity screening, and SAR (Suspicious Activity Report) generation. It replaces legacy rule-based systems with a hybrid ML + LLM architecture capable of:
+goAML-V2 is a self-hosted AML analytics platform for:
 
-- Real-time transaction risk scoring via XGBoost
-- Semantic document search using transformer embeddings
-- Entity resolution and network graph analysis
-- Sanctions and PEP screening against 46+ global datasets
-- Automated SAR narrative drafting using Qwen3-32B
-- BPMN-driven case management and workflow automation
-- PII extraction and redaction from financial documents
-- GPU-accelerated OCR for unstructured document ingestion
+- transaction risk scoring
+- sanctions and PEP screening
+- entity and relationship analysis
+- document OCR and structured extraction
+- semantic retrieval with embeddings and reranking
+- SAR drafting and investigative workflows
+- BPMN-driven case management and automation
+
+The system is intentionally split into two planes:
+
+- `goaml-v2`: app, workflow, storage, analytics, graph, vector, and support services
+- `gpu-01`: model-serving and document-intelligence services
 
 ---
 
 ## 2. Infrastructure
 
-### Primary Server
-| Component | Specification |
+### App / Control Plane
+
+| Item | Value |
 |---|---|
-| CPU | AMD EPYC — 512 cores |
+| Host | `goaml-v2` |
+| Role | API, UI, workflow, storage, analytics, graph/vector, support services |
+| OS | Ubuntu 24.04 |
+| CPU | AMD EPYC |
 | RAM | 1.5 TB |
 | Storage | 15 TB NVMe |
-| OS | Ubuntu 24.04 |
+| Path | `/home/ze/goaml-v2` |
 
-### GPU Server
-| Component | Specification |
+### Inference Plane
+
+| Item | Value |
 |---|---|
+| Host | `gpu-01` |
+| IP | `160.30.63.152` |
+| Role | LLM, embedding, rerank, OCR, PII, parse, scoring |
 | GPU 0 | NVIDIA L40S — 48 GB VRAM |
 | GPU 1 | NVIDIA L40S — 48 GB VRAM |
 | Total VRAM | 96 GB |
-| Access | NVIDIA AI Enterprise |
-
-### Project Path
-```
-/home/ze/dashboard-aml
-```
+| Path | `/home/ze/goaml-v2/models` |
 
 ---
 
-## 3. Architecture
+## 3. Current State
 
-The platform is organized into 7 architectural layers, each deployed as an independent Docker Compose stack sharing a single external Docker network (`goaml-network`).
+The following has been verified from live hosts and copied deployment files:
+
+- `goaml-v2` is running the app/control-plane services
+- `gpu-01` is running the model-serving stack
+- the app layer is being aligned to call model APIs over `160.30.63.152`
+- the app-side deployment source has been copied locally to [remote-goaml-v2-install](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install)
+- the model-side deployment source has been copied locally to [remote-gpu-01-models](/Users/ze/Documents/goaml-v2/remote-gpu-01-models)
+- the API mapping between the two is documented in [GPU_MODEL_API_INTEGRATION.md](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/GPU_MODEL_API_INTEGRATION.md)
+
+---
+
+## 4. Architecture
+
+The platform is organized into 7 layers, with the first 6 hosted on `goaml-v2` and the inference layer hosted on `gpu-01`.
 
 ```mermaid
 graph TD
-    subgraph L1 [App Layer]
-        app1[FastAPI]
-        app2[React UI]
-        app3[Superset]
-        app4[Nginx]
+    subgraph APP ["goaml-v2 (App / Control Plane)"]
+        subgraph L1 [App Layer]
+            app1[FastAPI]
+            app2[React UI]
+            app3[Superset]
+            app4[Nginx]
+        end
+
+        subgraph L2 [Workflow Layer]
+            wf1[n8n]
+            wf2[Camunda]
+        end
+
+        subgraph L3 [Agent Layer]
+            ag1[LangGraph]
+            ag2[MCP Server]
+            ag3[MLflow]
+        end
+
+        subgraph L4 [Docs Layer]
+            dc1[Tika]
+            dc2["yente / OpenSanctions"]
+            dc3[Elasticsearch]
+        end
+
+        subgraph L5 [Graph & Vector Layer]
+            gv1[Neo4j]
+            gv2[Milvus]
+            gv3[MinIO]
+            gv4[etcd]
+            gv5[Attu]
+        end
+
+        subgraph L6 [Storage Layer]
+            st1[PostgreSQL]
+            st2[ClickHouse]
+            st3[Redis]
+        end
     end
-    
-    subgraph L2 [Workflow Layer]
-        wf1[n8n]
-        wf2[Camunda]
+
+    subgraph GPU ["gpu-01 (Inference Plane)"]
+        subgraph L7 [ML / Inference Stack]
+            ml1[Qwen3-32B]
+            ml2[Qwen3-8B]
+            ml3[Embed]
+            ml4[Rerank]
+            ml5[Parse]
+            ml6[OCR]
+            ml7[PII]
+            ml8[XGBoost Scorer]
+        end
     end
-    
-    subgraph L3 [Agent Layer]
-        ag1[LangGraph]
-        ag2[MCP Server]
-        ag3[MLflow]
-    end
-    
-    subgraph L4 [Docs Layer]
-        dc1[Tika]
-        dc2[yente - OpenSanctions]
-        dc3[Elasticsearch]
-    end
-    
-    subgraph L5 [Graph & Vector Layer]
-        gv1[Neo4j]
-        gv2[Milvus]
-        gv3[MinIO]
-        gv4[etcd]
-        gv5[Attu]
-    end
-    
-    subgraph L6 [Storage Layer]
-        st1[PostgreSQL]
-        st2[ClickHouse]
-        st3[Redis]
-    end
-    
-    subgraph L7 [ML / NIM Stack]
-        ml1[Qwen3-32B & 8B]
-        ml2[nemotron-embed & rerank]
-        ml3[XGBoost]
-        ml4[gliner-PII]
-        ml5[nemotron-ocr-v2 & Parse]
-    end
-    
+
     L1 --> L2
     L2 --> L3
     L3 --> L4
     L4 --> L5
     L5 --> L6
-    L6 --> L7
+    L1 --> L7
+    L3 --> L7
 ```
 
 ---
 
-## 4. ML / NIM Stack
+## 5. ML / Inference Stack
 
-All 8 ML services are deployed and running. GPU assignment is optimized to avoid VRAM contention.
+All 8 model-related services were verified on `gpu-01`.
 
-| Container | Model | Port | Runtime | GPU | Purpose |
-|---|---|---|---|---|---|
-| `goaml-llm-primary` | Qwen3-32B-FP8 | 8000 | vLLM | GPU 0 | SAR drafting, complex reasoning, case analysis |
-| `goaml-embed` | llama-nemotron-embed-1b-v2 | 8001 | vLLM | GPU 1 | Document & entity embeddings, semantic search |
-| `goaml-llm-fast` | Qwen3-8B-FP8 | 8002 | vLLM | GPU 1 | Alert classification, routing, quick inference |
-| `goaml-rerank` | llama-nemotron-rerank-1b-v2 | 8003 | vLLM | GPU 1 | Search result reranking |
-| `goaml-scorer` | XGBoost (placeholder) | 8010 | FastAPI | CPU | Transaction risk scoring |
-| `goaml-pii` | nvidia/gliner-PII | 8020 | FastAPI | CPU | PII/PHI extraction — 55+ entity types |
-| `goaml-ocr` | nvidia/nemotron-ocr-v2 | 8021 | FastAPI | GPU 1 | Document OCR — replaces Tika OCR path |
-| `goaml-parse` | NVIDIA-Nemotron-Parse-v1.1 | 8022 | vLLM | GPU 1 | Structured document parsing |
+| Container | Model / Service | Port | Runtime | Purpose |
+|---|---|---:|---|---|
+| `goaml-llm-primary` | `Qwen/Qwen3-32B-FP8` | 8000 | vLLM | Primary reasoning and SAR drafting |
+| `goaml-llm-fast` | `Qwen/Qwen3-8B-FP8` | 8002 | vLLM | Fast inference and routing |
+| `goaml-embed` | `nvidia/llama-nemotron-embed-1b-v2` | 8001 | vLLM pooling | Embeddings and semantic retrieval |
+| `goaml-rerank` | `nvidia/llama-nemotron-rerank-1b-v2` | 8003 | vLLM pooling | Retrieval reranking |
+| `goaml-parse` | `nvidia/NVIDIA-Nemotron-Parse-v1.1` | 8022 | vLLM | Structured document parsing |
+| `goaml-ocr` | `nemotron-ocr-v2` wrapper | 8021 | FastAPI | OCR for uploaded documents |
+| `goaml-pii` | `gliner-pii` wrapper | 8020 | FastAPI | PII/entity extraction |
+| `goaml-scorer` | XGBoost scorer | 8010 | FastAPI | Transaction risk scoring |
 
-### Base URLs (internal Docker network)
+### Remote API Endpoints
+
 ```python
-LLM_PRIMARY  = "http://goaml-llm-primary:8000/v1"   # OpenAI-compatible
-LLM_FAST     = "http://goaml-llm-fast:8002/v1"       # OpenAI-compatible
-EMBED_URL    = "http://goaml-embed:8001/v1"           # OpenAI-compatible
-RERANK_URL   = "http://goaml-rerank:8003/v1"          # OpenAI-compatible
-SCORER_URL   = "http://goaml-scorer:8010"
-PII_URL      = "http://goaml-pii:8020"
-OCR_URL      = "http://goaml-ocr:8021"
-PARSE_URL    = "http://goaml-parse:8022/v1"
+LLM_PRIMARY_URL = "http://160.30.63.152:8000/v1"
+LLM_FAST_URL    = "http://160.30.63.152:8002/v1"
+EMBED_URL       = "http://160.30.63.152:8001/v1"
+RERANK_URL      = "http://160.30.63.152:8003/v1"
+PARSE_URL       = "http://160.30.63.152:8022/v1"
+OCR_URL         = "http://160.30.63.152:8021"
+PII_URL         = "http://160.30.63.152:8020"
+SCORER_URL      = "http://160.30.63.152:8010"
 ```
 
 ---
 
-## 5. Service Layers
+## 6. Service Layers
 
-### 5.1 Storage Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-postgres` | postgres:16 | 5432 | Primary relational store — transactions, cases, alerts, users |
-| `goaml-clickhouse` | clickhouse/clickhouse-server:24.3 | 8123 / 9000 | Time-series analytics — transaction volume, risk trends |
-| `goaml-redis` | redis:7.2-alpine | 6379 | Caching, pub/sub, queue backend for n8n |
+### 6.1 Storage Layer
 
-**Databases in PostgreSQL:**
-- `goaml` — main application database (transactions, alerts, cases, entities)
-- `superset` — Apache Superset metadata (isolated to avoid migration conflicts)
+| Service | Port | Purpose |
+|---|---|---|
+| PostgreSQL | 5432 | Primary relational store |
+| ClickHouse | 8123 / 9000 | Analytics and time-series workloads |
+| Redis | 6379 | Cache and queue backend |
 
-### 5.2 Graph + Vector Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-neo4j` | neo4j:5.18-community | 7474 / 7687 | Entity relationship graph — accounts, persons, companies |
-| `goaml-milvus` | milvusdb/milvus:v2.4.9 | 19530 / 9091 | Vector store — document and entity embeddings |
-| `goaml-minio` | minio/minio | 9001 / 9002 | Object storage — Milvus backend, MLflow artifacts |
-| `goaml-etcd` | quay.io/coreos/etcd:v3.5.14 | 2379 | Milvus metadata store |
-| `goaml-attu` | zilliz/attu:v2.4 | 8080 | Milvus web UI |
+### 6.2 Graph + Vector Layer
 
-Neo4j plugins installed: **APOC** + **Graph Data Science** — both required for entity resolution and network centrality analysis.
+| Service | Port | Purpose |
+|---|---|---|
+| Neo4j | 7474 / 7687 | Entity relationship graph |
+| Milvus | 19530 / 9091 | Vector store |
+| MinIO | 9001 / 9002 | Object storage |
+| etcd | 2379 | Milvus metadata |
+| Attu | 8080 | Milvus UI |
 
-### 5.3 Docs Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-tika` | apache/tika:3.3.0.0-full | 9998 | Document text extraction (PDF, Office, etc.) |
-| `goaml-yente` | ghcr.io/opensanctions/yente:latest | 8383 | OpenSanctions screening API — 46+ datasets |
-| `goaml-elasticsearch` | elasticsearch:8.13.4 | 9200 | yente search backend |
+### 6.3 Docs + Screening Layer
 
-Document ingestion pipeline: `Tika → nemotron-ocr-v2 → Nemotron-Parse → Milvus`
+| Service | Port | Purpose |
+|---|---|---|
+| Tika | 9998 | Document extraction |
+| yente | 8383 | OpenSanctions API |
+| Elasticsearch | 9200 | Screening/search backend |
 
-### 5.4 Agent Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-mlflow` | goaml-mlflow:latest | 5000 | ML experiment tracking, model registry |
-| `goaml-langgraph` | goaml-langgraph:latest | 8100 | AML agent workflow runtime |
-| `goaml-mcp-server` | goaml-mcp-server:latest | 8200 | Model Context Protocol — tool access for agents |
+### 6.4 Agent Layer
 
-MLflow backend: PostgreSQL (`goaml` db) + MinIO (`mlflow-artifacts` bucket).
+| Service | Port | Purpose |
+|---|---|---|
+| MLflow | 5000 | Experiment tracking and registry |
+| LangGraph | 8100 | Agent workflow runtime |
+| MCP Server | 8200 | Tool access for agents |
 
-Planned LangGraph agents:
-- `aml_screening_agent` — entity screening orchestration
-- `transaction_monitor_agent` — real-time risk analysis
-- `entity_resolution_agent` — cross-source entity deduplication
-- `sar_report_agent` — automated SAR narrative drafting
+### 6.5 Workflow Layer
 
-MCP tools exposed:
-- `query_transactions` — PostgreSQL AML records
-- `screen_entity` — yente sanctions lookup
-- `graph_lookup` — Neo4j relationship traversal
-- `vector_search` — Milvus semantic search
-- `get_risk_score` — XGBoost scoring
+| Service | Port | Purpose |
+|---|---|---|
+| n8n | 5678 | Workflow automation |
+| Camunda | 8085 | BPMN process engine |
 
-### 5.5 Workflow Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-n8n` | n8nio/n8n:1.44.1 | 5678 | Workflow automation — alert triggers, notifications |
-| `goaml-n8n-worker` | n8nio/n8n:1.44.1 | — | Queue worker — parallel workflow execution |
-| `goaml-camunda` | camunda/camunda-bpm-platform:run-latest | 8085 | BPMN engine — case lifecycle, SAR approval flows |
+### 6.6 App Layer
 
-n8n runs in queue mode with Redis as the message broker. Camunda handles long-running case management processes with audit trails.
-
-### 5.6 App Layer
-| Service | Image | Port | Purpose |
-|---|---|---|---|
-| `goaml-fastapi` | goaml-fastapi:latest | 8000 | REST API backend |
-| `goaml-react-ui` | goaml-react-ui:latest | 3000 | AML dashboard frontend |
-| `goaml-superset` | goaml-superset:latest | 8088 | Analytics dashboards |
-| `goaml-nginx` | nginx:1.27-alpine | 80 | Reverse proxy — unified entry point |
-
-**Nginx routing:**
-| Path | Service |
-|---|---|
-| `/` | React UI |
-| `/api/` | FastAPI |
-| `/docs` | FastAPI Swagger |
-| `/superset/` | Apache Superset |
-| `/mlflow/` | MLflow UI |
-| `/n8n/` | n8n workflows |
+| Service | Port | Purpose |
+|---|---|---|
+| FastAPI | 8000 | Backend API |
+| React UI | 3000 | Dashboard frontend |
+| Superset | 8088 | Analytics dashboards |
+| Nginx | 80 | Reverse proxy and entry point |
 
 ---
 
-## 6. Port Reference
+## 7. Port Reference
+
+### `goaml-v2`
 
 | Port | Service | Protocol |
 |---|---|---|
-| 80 | Nginx (reverse proxy) | HTTP |
+| 80 | Nginx | HTTP |
 | 3000 | React UI | HTTP |
 | 5000 | MLflow | HTTP |
 | 5432 | PostgreSQL | TCP |
@@ -247,22 +248,14 @@ n8n runs in queue mode with Redis as the message broker. Camunda handles long-ru
 | 6379 | Redis | TCP |
 | 7474 | Neo4j Browser | HTTP |
 | 7687 | Neo4j Bolt | TCP |
-| 8000 | FastAPI / Qwen3-32B | HTTP |
-| 8001 | llama-nemotron-embed | HTTP |
-| 8002 | Qwen3-8B | HTTP |
-| 8003 | llama-nemotron-rerank | HTTP |
-| 8010 | XGBoost scorer | HTTP |
-| 8020 | gliner-PII | HTTP |
-| 8021 | nemotron-ocr-v2 | HTTP |
-| 8022 | Nemotron-Parse | HTTP |
-| 8080 | Attu (Milvus UI) | HTTP |
+| 8080 | Attu | HTTP |
 | 8085 | Camunda | HTTP |
-| 8088 | Apache Superset | HTTP |
+| 8088 | Superset | HTTP |
 | 8100 | LangGraph | HTTP |
 | 8123 | ClickHouse HTTP | HTTP |
 | 8200 | MCP Server | HTTP |
-| 8383 | yente (OpenSanctions) | HTTP |
-| 9000 | ClickHouse Native / MinIO S3 | TCP |
+| 8383 | yente | HTTP |
+| 9000 | ClickHouse native | TCP |
 | 9001 | MinIO Console | HTTP |
 | 9002 | MinIO S3 API | HTTP |
 | 9091 | Milvus HTTP | HTTP |
@@ -270,17 +263,28 @@ n8n runs in queue mode with Redis as the message broker. Camunda handles long-ru
 | 9998 | Apache Tika | HTTP |
 | 19530 | Milvus gRPC | gRPC |
 
+### `gpu-01` (`160.30.63.152`)
+
+| Port | Service | Protocol |
+|---|---|---|
+| 8000 | Qwen3-32B | HTTP |
+| 8001 | Embed | HTTP |
+| 8002 | Qwen3-8B | HTTP |
+| 8003 | Rerank | HTTP |
+| 8010 | XGBoost scorer | HTTP |
+| 8020 | gliner-PII | HTTP |
+| 8021 | nemotron-ocr-v2 | HTTP |
+| 8022 | Nemotron-Parse | HTTP |
+
 ---
 
-## 7. Docker Deployment
+## 8. Docker Deployment
 
-### Network
+### `goaml-v2`
+
 ```bash
 docker network create goaml-network
-```
 
-### Layer startup order
-```bash
 # 1 — Storage
 docker compose -f docker-compose.storage.yml --env-file .env.storage up -d
 
@@ -300,164 +304,153 @@ docker compose -f docker-compose.workflow.yml --env-file .env.workflow up -d
 docker compose -f docker-compose.app.yml --env-file .env.app up -d --build
 ```
 
-### Useful commands
+### `gpu-01`
+
+The live model stack is deployed from separate compose projects under:
+
 ```bash
-# Check all containers
-docker ps
+/home/ze/goaml-v2/models
+```
 
-# Follow logs for a service
-docker logs -f goaml-fastapi
+Local copied model deployment source:
 
-# Restart a single service
-docker compose -f docker-compose.app.yml --env-file .env.app up -d --force-recreate fastapi
-
-# Stop a layer
-docker compose -f docker-compose.storage.yml down
-
-# Stop everything (preserves volumes)
-docker ps -q | xargs docker stop
+```bash
+/Users/ze/Documents/goaml-v2/remote-gpu-01-models
 ```
 
 ---
 
-## 8. Environment Variables
+## 9. Environment Variables
 
-### Credentials (all layers share these secrets)
+### Shared platform credentials
 
-| Variable | Value | Notes |
-|---|---|---|
-| `POSTGRES_USER` | `goaml` | |
-| `POSTGRES_PASSWORD` | `Asdf@1234` | Use `Asdf%401234` in URI strings |
-| `POSTGRES_DB` | `goaml` | Superset uses `superset` db |
-| `CLICKHOUSE_USER` | `goaml` | |
-| `CLICKHOUSE_PASSWORD` | `Asdf@1234` | |
-| `REDIS_PASSWORD` | `Asdf@1234` | |
-| `NEO4J_USER` | `neo4j` | |
-| `NEO4J_PASSWORD` | `Asdf@1234` | |
-| `MINIO_ACCESS_KEY` | `minioadmin` | |
-| `MINIO_SECRET_KEY` | `Asdf@1234` | Use `Asdf%401234` in URI strings |
+| Variable | Value / Notes |
+|---|---|
+| `POSTGRES_USER` | `goaml` |
+| `POSTGRES_PASSWORD` | `Asdf@1234` or `Asdf%401234` when URI-encoded |
+| `POSTGRES_DB` | `goaml` |
+| `CLICKHOUSE_USER` | `goaml` |
+| `CLICKHOUSE_PASSWORD` | `Asdf@1234` |
+| `REDIS_PASSWORD` | `Asdf@1234` |
+| `NEO4J_USER` | `neo4j` |
+| `NEO4J_PASSWORD` | `Asdf@1234` |
+| `MINIO_ACCESS_KEY` | `minioadmin` |
+| `MINIO_SECRET_KEY` | `Asdf@1234` or `Asdf%401234` when URI-encoded |
 
-> **Note:** Passwords containing `@` must be URL-encoded as `%40` when embedded in connection URI strings (PostgreSQL, MinIO S3). Passwords passed as direct env vars to drivers (Redis, Neo4j) use the raw value.
+### GPU API variables
+
+| Variable | Value |
+|---|---|
+| `LLM_PRIMARY_URL` | `http://160.30.63.152:8000/v1` |
+| `LLM_FAST_URL` | `http://160.30.63.152:8002/v1` |
+| `EMBED_URL` | `http://160.30.63.152:8001/v1` |
+| `RERANK_URL` | `http://160.30.63.152:8003/v1` |
+| `PARSE_URL` | `http://160.30.63.152:8022/v1` |
+| `OCR_URL` | `http://160.30.63.152:8021` |
+| `PII_URL` | `http://160.30.63.152:8020` |
+| `SCORER_URL` | `http://160.30.63.152:8010` |
 
 ### Special variables
+
 | Variable | Layer | Notes |
 |---|---|---|
-| `N8N_ENCRYPTION_KEY` | Workflow | 32-byte hex — critical, back up immediately |
-| `SUPERSET_SECRET_KEY` | App | 32-byte hex |
-| `SUPERSET_ADMIN_PASSWORD` | App | Superset admin login |
-| `OPENSANCTIONS_DELIVERY_TOKEN` | Docs | Required for commercial use of OpenSanctions |
+| `N8N_ENCRYPTION_KEY` | Workflow | Critical secret |
+| `SUPERSET_SECRET_KEY` | App | Superset secret |
+| `SUPERSET_ADMIN_PASSWORD` | App | Superset admin password |
+| `OPENSANCTIONS_DELIVERY_TOKEN` | Docs | Required for OpenSanctions delivery |
 
 ---
 
-## 9. Data Flow
+## 10. Data Flow
 
 ### Transaction Ingestion Pipeline
+
 ```mermaid
 flowchart TD
-    EXT[External Source] -->|Ingest| API[FastAPI /api/v1/transactions]
-    API -->|Raw Storage| PG[(PostgreSQL)]
-    API -->|Analytics Write| CH[(ClickHouse)]
-    API -->|Risk Score| XGB[XGBoost Scorer]
-    XGB --> COND{Risk > Threshold?}
-    COND -->|Yes| ALERT[Alert Created]
-    ALERT --> N8N[n8n Workflow Triggered]
-    N8N --> LG[LangGraph transaction_monitor_agent]
-    LG --> NEO[(Neo4j Entity Relationship Update)]
+    EXT["External Source"] --> API["FastAPI /api/v1/transactions"]
+    API --> PG[(PostgreSQL)]
+    API --> CH[(ClickHouse)]
+    API --> XGB["XGBoost Scorer @ gpu-01"]
+    XGB --> COND{"Risk > Threshold?"}
+    COND -->|Yes| ALERT["Alert Created"]
+    ALERT --> N8N["n8n Workflow"]
+    N8N --> LG["LangGraph transaction_monitor_agent"]
+    LG --> NEO[(Neo4j)]
 ```
 
 ### Document Processing Pipeline
+
 ```mermaid
 flowchart TD
-    DOC[Document Upload <br> PDF, Office, Image] --> TIKA[Apache Tika: Text Extraction]
-    DOC --> OCR[nemotron-ocr-v2: GPU OCR]
-    TIKA & OCR --> PARSE[Nemotron-Parse: Structured Extraction]
-    PARSE --> PII[gliner-PII: Entity & PII Extraction]
-    PII --> EMBED[llama-nemotron-embed: Embeddings]
-    EMBED --> DB[(Milvus Vector Store)]
-    EMBED --> META[(PostgreSQL Metadata)]
+    DOC["Document Upload"] --> TIKA["Apache Tika"]
+    DOC --> OCR["nemotron-ocr-v2 @ gpu-01"]
+    TIKA --> PARSE["Nemotron-Parse @ gpu-01"]
+    OCR --> PARSE
+    PARSE --> PII["gliner-PII @ gpu-01"]
+    PII --> EMBED["Embed @ gpu-01"]
+    EMBED --> MILVUS[(Milvus)]
+    EMBED --> PG[(PostgreSQL Metadata)]
 ```
 
 ### Entity Screening Pipeline
+
 ```mermaid
 flowchart TD
-    ENT[Entity Name / Identifier] --> API[FastAPI /api/v1/screen]
-    API --> YENTE[yente API: OpenSanctions]
-    YENTE --> EMBED[llama-nemotron-embed: Semantic Similarity]
-    EMBED --> MILVUS[(Milvus Vector Search <br> fuzzy matching)]
-    MILVUS --> RERANK[llama-nemotron-rerank: Result Reranking]
-    RERANK --> NEO[(Neo4j: Relationship Context)]
-    NEO --> RES[Response: Match Score + Source Dataset]
+    ENT["Entity Name / Identifier"] --> API["FastAPI /api/v1/screen"]
+    API --> YENTE["yente / OpenSanctions"]
+    API --> EMBED["Embed @ gpu-01"]
+    EMBED --> MILVUS[(Milvus)]
+    MILVUS --> RERANK["Rerank @ gpu-01"]
+    RERANK --> NEO[(Neo4j)]
+    NEO --> RES["Match Score + Context"]
 ```
 
 ### SAR Drafting Pipeline
+
 ```mermaid
 flowchart TD
-    CASE[Case Opened <br> Manual or Automated] --> AGENT[LangGraph sar_report_agent]
-    AGENT <-->|Tool Execution| MCP[MCP Tools <br> query_transactions, graph_lookup, screen_entity]
-    AGENT --> QWEN[Qwen3-32B: Narrative Generation]
-    QWEN --> CAMUNDA[Camunda: Approval BPMN Process]
-    CAMUNDA --> PG[(FastAPI: SAR Record Stored)]
-    PG --> N8N[n8n: Notification Workflow]
+    CASE["Case Opened"] --> AGENT["LangGraph sar_report_agent"]
+    AGENT <-->|Tool Use| MCP["MCP Server"]
+    AGENT --> QWEN["Qwen3-32B @ gpu-01"]
+    QWEN --> CAMUNDA["Camunda Approval Flow"]
+    CAMUNDA --> PG[(PostgreSQL)]
+    PG --> N8N["Notification Workflow"]
 ```
-
----
-
-## 10. API Reference
-
-All endpoints are available at `http://localhost:8000` (direct) or `http://localhost:80/api/` (via Nginx).
-
-Interactive docs: `http://localhost:8000/docs`
-
-### Planned endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Service health check |
-| `GET` | `/api/v1/status` | All downstream service status |
-| `POST` | `/api/v1/transactions` | Ingest transaction |
-| `GET` | `/api/v1/transactions` | List transactions with filters |
-| `GET` | `/api/v1/transactions/{id}` | Transaction detail |
-| `POST` | `/api/v1/screen` | Screen entity against sanctions |
-| `GET` | `/api/v1/alerts` | List alerts |
-| `PATCH` | `/api/v1/alerts/{id}` | Update alert status |
-| `POST` | `/api/v1/cases` | Create case |
-| `GET` | `/api/v1/cases` | List cases |
-| `POST` | `/api/v1/cases/{id}/sar` | Draft SAR report |
-| `POST` | `/api/v1/documents` | Upload document |
-| `GET` | `/api/v1/graph/entity/{id}` | Entity network graph |
-| `POST` | `/api/v1/search` | Semantic search |
 
 ---
 
 ## 11. Roadmap
 
 ### Phase 2 — Integration & Data Wiring (next)
-- [ ] Build FastAPI route handlers (`/transactions`, `/alerts`, `/cases`, `/screen`)
-- [ ] Create PostgreSQL schema (transactions, alerts, cases, entities, users)
-- [ ] Create ClickHouse schema (transaction time-series)
-- [ ] Create Milvus collections and indexes
-- [ ] Define Neo4j entity graph schema
-- [ ] Register XGBoost model in MLflow model registry
-- [ ] Build LangGraph agent graphs
-- [ ] Wire n8n alert trigger workflows
-- [ ] Build Superset dashboards on ClickHouse + PostgreSQL
+
+- Build FastAPI route handlers (`/transactions`, `/alerts`, `/cases`, `/screen`)
+- Create PostgreSQL schema (transactions, alerts, cases, entities, users)
+- Create ClickHouse schema (transaction time-series)
+- Create Milvus collections and indexes
+- Define Neo4j entity graph schema
+- Register XGBoost model in MLflow model registry
+- Build LangGraph agent graphs
+- Wire n8n alert trigger workflows
+- Build Superset dashboards on ClickHouse + PostgreSQL
 
 ### Phase 3 — NIM Integration
-- [ ] Connect FastAPI to Qwen3-32B for SAR narrative generation
-- [ ] Connect FastAPI to llama-nemotron-embed for document indexing
-- [ ] Connect FastAPI to gliner-PII for entity extraction
-- [ ] Connect nemotron-ocr-v2 into document ingestion pipeline
-- [ ] Connect Nemotron-Parse for structured document extraction
-- [ ] Connect XGBoost scorer for real-time transaction risk
+
+- Connect FastAPI to Qwen3-32B for SAR narrative generation
+- Connect FastAPI to llama-nemotron-embed for document indexing
+- Connect FastAPI to gliner-PII for entity extraction
+- Connect nemotron-ocr-v2 into document ingestion pipeline
+- Connect Nemotron-Parse for structured document extraction
+- Connect XGBoost scorer for real-time transaction risk
 
 ### Phase 4 — Production Hardening
-- [ ] Add authentication (JWT via FastAPI)
-- [ ] Enable HTTPS (TLS on Nginx)
-- [ ] Configure ClickHouse retention policies
-- [ ] Add Prometheus + Grafana monitoring
-- [ ] Set up automated backups (PostgreSQL, Neo4j, Milvus)
-- [ ] Load test ML endpoints
-- [ ] Security audit — secrets rotation, network isolation
+
+- Add authentication (JWT via FastAPI)
+- Enable HTTPS (TLS on Nginx)
+- Configure ClickHouse retention policies
+- Add Prometheus + Grafana monitoring
+- Set up automated backups (PostgreSQL, Neo4j, Milvus)
+- Load test ML endpoints
+- Security audit — secrets rotation, network isolation
 
 ---
 
