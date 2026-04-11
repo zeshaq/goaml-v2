@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ import httpx
 from core.config import settings
 from core.database import get_pool
 from services.case_context import get_case_context
+from services.case_grounding import build_case_grounding
 from services.cases import get_case_detail
 from services.graph_sync import safe_resync_graph
 
@@ -118,7 +120,12 @@ def _fallback_case_summary(case_detail: dict[str, Any], context: dict[str, Any])
     return summary, risk_factors[:5], "template-v1", False
 
 
-def _build_case_summary_prompt(case_detail: dict[str, Any], context: dict[str, Any]) -> str:
+def _build_case_summary_prompt(
+    case_detail: dict[str, Any],
+    context: dict[str, Any],
+    used_evidence: list[dict[str, Any]],
+    grounding_mode: str | None,
+) -> str:
     tx_lines = [
         " | ".join(
             [
@@ -167,6 +174,18 @@ def _build_case_summary_prompt(case_detail: dict[str, Any], context: dict[str, A
         for item in (context.get("direct_documents", []) + context.get("related_documents", []))[:8]
     ]
     graph_summary = context.get("graph", {}).get("summary") or []
+    grounding_lines = [
+        " | ".join(
+            [
+                f"type={item.get('evidence_type')}",
+                f"title={item.get('title')}",
+                f"importance={item.get('importance')}",
+                f"include_in_sar={item.get('include_in_sar')}",
+                f"summary={item.get('summary')}",
+            ]
+        )
+        for item in used_evidence[:8]
+    ]
 
     return (
         "Generate an AML case summary for an analyst workbench.\n\n"
@@ -188,6 +207,9 @@ def _build_case_summary_prompt(case_detail: dict[str, Any], context: dict[str, A
         f"{chr(10).join(document_lines) if document_lines else 'None'}\n\n"
         "Graph summary:\n"
         f"{chr(10).join(graph_summary) if graph_summary else 'None'}\n\n"
+        f"Grounding mode: {grounding_mode or 'context_fallback'}\n"
+        "Grounded evidence to prioritize:\n"
+        f"{chr(10).join(grounding_lines) if grounding_lines else 'None'}\n\n"
         "Return valid JSON with this exact shape:\n"
         '{\n'
         '  "summary": "2-4 sentences in a concise, factual AML investigation tone",\n'
@@ -204,6 +226,7 @@ async def generate_case_summary(
     persist: bool = True,
     document_limit: int = 4,
     related_limit: int = 6,
+    prioritize_pinned_evidence: bool = True,
 ) -> dict[str, Any] | None:
     case_detail = await get_case_detail(case_id)
     if not case_detail:
@@ -212,6 +235,15 @@ async def generate_case_summary(
     context = await get_case_context(case_id, document_limit=document_limit, related_limit=related_limit)
     if not context:
         return None
+    grounding = await build_case_grounding(
+        case_id,
+        context=context,
+        prioritize_pinned_evidence=prioritize_pinned_evidence,
+        filing_only=False,
+        limit=8,
+    )
+    used_evidence = grounding.get("used_evidence", [])
+    grounding_mode = grounding.get("grounding_mode")
 
     fallback_summary, fallback_risk_factors, fallback_model, fallback_ai = _fallback_case_summary(case_detail, context)
     model_name = settings.LLM_PRIMARY_MODEL
@@ -231,7 +263,7 @@ async def generate_case_summary(
                     "Stay factual, mention suspicious patterns and corroborating evidence, and keep the tone operational."
                 ),
             },
-            {"role": "user", "content": _build_case_summary_prompt(case_detail, context)},
+            {"role": "user", "content": _build_case_summary_prompt(case_detail, context, used_evidence, grounding_mode)},
         ],
     }
 
@@ -258,18 +290,28 @@ async def generate_case_summary(
         ai_generated = fallback_ai
 
     if persist:
+        case_metadata = dict(case_detail.get("metadata") or {})
+        case_metadata["ai_summary_grounding"] = {
+            "grounding_mode": grounding_mode,
+            "used_evidence": used_evidence,
+            "model": model_name,
+            "ai_generated": ai_generated,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "prioritize_pinned_evidence": prioritize_pinned_evidence,
+        }
         pool = get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     """
                     UPDATE cases
-                    SET ai_summary = $2, ai_risk_factors = $3, updated_at = NOW()
+                    SET ai_summary = $2, ai_risk_factors = $3, metadata = $4::jsonb, updated_at = NOW()
                     WHERE id = $1
                     """,
                     case_id,
                     summary_text,
                     risk_factors,
+                    json.dumps(case_metadata),
                 )
                 await conn.execute(
                     """
@@ -284,6 +326,8 @@ async def generate_case_summary(
                             "model": model_name,
                             "ai_generated": ai_generated,
                             "risk_factor_count": len(risk_factors),
+                            "grounding_mode": grounding_mode,
+                            "used_evidence_count": len(used_evidence),
                         }
                     ),
                 )
@@ -296,6 +340,8 @@ async def generate_case_summary(
         "model": model_name,
         "ai_generated": ai_generated,
         "persisted": persist,
+        "grounding_mode": grounding_mode,
+        "used_evidence": used_evidence,
         "focus_queries": context.get("focus_queries", []),
         "context_summary": context.get("summary", []),
     }

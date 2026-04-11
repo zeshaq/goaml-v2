@@ -21,6 +21,14 @@ CASH_TYPES    = {"cash_deposit", "cash_withdrawal"}
 CRYPTO_TYPES  = {"crypto"}
 
 
+def _risk_level_from_score(score: float) -> str:
+    if score >= 0.75:
+        return "high"
+    if score >= 0.45:
+        return "medium"
+    return "low"
+
+
 def to_usd(amount: Decimal, currency: str) -> float:
     rate = FX_RATES.get(currency.upper(), 1.0)
     return float(amount) * rate
@@ -46,6 +54,44 @@ def build_scorer_request(txn: TransactionIngest) -> ScorerRequest:
     )
 
 
+def build_legacy_feature_vector(req: ScorerRequest) -> list[list[float]]:
+    """
+    Legacy scorer compatibility payload for older /score contracts.
+    """
+    return [[
+        float(req.amount_usd),
+        float(req.is_international),
+        float(req.is_cash),
+        float(req.is_crypto),
+        float(req.hour_of_day),
+        float(req.day_of_week),
+        1.0 if str(req.sender_country).upper() != str(req.receiver_country).upper() else 0.0,
+    ]]
+
+
+def _build_scorer_response(data: dict, request: ScorerRequest, scoring_mode: str) -> ScorerResponse:
+    raw_score = data.get("risk_score")
+    if raw_score is None:
+        scores = data.get("scores") or []
+        if isinstance(scores, list) and scores:
+            raw_score = scores[0]
+    score = float(raw_score or 0.0)
+    risk_level = data.get("risk_level") or _risk_level_from_score(score)
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    return ScorerResponse(
+        risk_score=score,
+        risk_level=risk_level,
+        risk_factors=data.get("risk_factors", []),
+        features=data.get("features", request.model_dump()),
+        scoring_mode=data.get("scoring_mode") or scoring_mode,
+        model_name=data.get("model_name"),
+        registered_model_name=data.get("registered_model_name"),
+        model_version=str(data.get("model_version")) if data.get("model_version") not in (None, "") else None,
+        model_stage=data.get("model_stage"),
+        metadata=metadata,
+    )
+
+
 async def score_transaction(txn: TransactionIngest) -> ScorerResponse:
     """
     Call the XGBoost scorer. Falls back to a rule-based score
@@ -60,14 +106,15 @@ async def score_transaction(txn: TransactionIngest) -> ScorerResponse:
                 f"{settings.SCORER_URL}/score",
                 json=request.model_dump(),
             )
+            if resp.status_code == 422:
+                legacy_resp = await client.post(
+                    f"{settings.SCORER_URL}/score",
+                    json={"features": build_legacy_feature_vector(request)},
+                )
+                legacy_resp.raise_for_status()
+                return _build_scorer_response(legacy_resp.json(), request, "legacy_service")
             resp.raise_for_status()
-            data = resp.json()
-            return ScorerResponse(
-                risk_score   = float(data.get("risk_score", 0.0)),
-                risk_level   = data.get("risk_level", "low"),
-                risk_factors = data.get("risk_factors", []),
-                features     = data.get("features", request.model_dump()),
-            )
+            return _build_scorer_response(resp.json(), request, "service")
 
     except Exception:
         # Scorer unavailable — apply rule-based fallback
@@ -115,4 +162,10 @@ def _rule_based_score(req: ScorerRequest, amount_usd: float) -> ScorerResponse:
         risk_level   = level,
         risk_factors = factors,
         features     = req.model_dump(),
+        scoring_mode = "rule_fallback",
+        model_name   = "rule-fallback-v1",
+        registered_model_name = settings.SCORER_REGISTERED_MODEL_NAME,
+        model_version = None,
+        model_stage = None,
+        metadata = {"source": "app_fallback"},
     )

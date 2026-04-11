@@ -241,6 +241,28 @@ class EntityProfileResponse(BaseModel):
     graph: GraphDrilldownResponse | None = None
 
 
+class EntityNetworkRecommendationItem(BaseModel):
+    key: str
+    title: str
+    severity: str = "info"
+    rationale: str
+    deep_link: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EntityNetworkIntelligenceResponse(BaseModel):
+    entity_id: UUID
+    network_risk_score: float = 0.0
+    connected_high_risk_nodes: int = 0
+    connected_alerts: int = 0
+    connected_cases: int = 0
+    connected_documents: int = 0
+    connected_screening_hits: int = 0
+    watch_patterns: list[dict[str, Any]] = Field(default_factory=list)
+    graph_recommendations: list[EntityNetworkRecommendationItem] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+
+
 class EntityResolutionRequest(BaseModel):
     action: str = Field(..., min_length=3, max_length=64)
     actor: str | None = None
@@ -383,6 +405,36 @@ class DocumentAttachRequest(BaseModel):
     attached_by: str | None = None
 
 
+class DocumentIntelligenceMatchItem(BaseModel):
+    document_id: UUID | None = None
+    filename: str
+    relation: str
+    score: float | None = None
+    case_id: UUID | None = None
+    entity_id: UUID | None = None
+    created_at: datetime | None = None
+    note: str | None = None
+
+
+class DocumentProvenanceItem(BaseModel):
+    source_type: str
+    source_id: str | None = None
+    label: str
+    detail: str | None = None
+    created_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentIntelligenceResponse(BaseModel):
+    document_id: UUID
+    duplicate_candidates: list[DocumentIntelligenceMatchItem] = Field(default_factory=list)
+    related_documents: list[DocumentIntelligenceMatchItem] = Field(default_factory=list)
+    provenance_trail: list[DocumentProvenanceItem] = Field(default_factory=list)
+    filing_pack_impact: dict[str, Any] = Field(default_factory=dict)
+    recommendations: list[str] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+
+
 class CaseContextAlertItem(BaseModel):
     id: UUID
     alert_ref: str
@@ -454,6 +506,18 @@ class CaseSummaryRequest(BaseModel):
     persist: bool = True
     document_limit: int = Field(4, ge=1, le=12)
     related_limit: int = Field(6, ge=1, le=15)
+    prioritize_pinned_evidence: bool = True
+
+
+class GroundedEvidenceItem(BaseModel):
+    evidence_type: str
+    title: str
+    summary: str | None = None
+    source: str | None = None
+    source_evidence_id: str | None = None
+    importance: int | None = None
+    include_in_sar: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseSummaryResponse(BaseModel):
@@ -463,5 +527,7 @@ class CaseSummaryResponse(BaseModel):
     model: str | None = None
     ai_generated: bool = False
     persisted: bool = True
+    grounding_mode: str | None = None
+    used_evidence: list[GroundedEvidenceItem] = Field(default_factory=list)
     focus_queries: list[str] = Field(default_factory=list)
     context_summary: list[str] = Field(default_factory=list)

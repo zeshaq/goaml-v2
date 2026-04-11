@@ -1,0 +1,75 @@
+[
+  {
+    "name": "goAML Scheduled Report Distribution Monthly",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 4,
+                "triggerAtDay": [1],
+                "triggerAtHour": 10,
+                "triggerAtMinute": 15
+              }
+            ]
+          }
+        },
+        "id": "rpt-monthly-schedule-01",
+        "name": "Monthly Distribution Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [260, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/auth/login",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"username\":\"manager1\",\"password\":\"Goaml!2026\"}"
+        },
+        "id": "rpt-monthly-login-02",
+        "name": "Login as Manager",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [560, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/manager/reports/distribute/run?cadence=monthly&range_days=365&actor=manager1",
+          "sendHeaders": true,
+          "specifyHeaders": "json",
+          "jsonHeaders": "={\"Authorization\":\"Bearer \" + $json.access_token}"
+        },
+        "id": "rpt-monthly-run-03",
+        "name": "Run Monthly Distribution",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [860, 260]
+      }
+    ],
+    "connections": {
+      "Monthly Distribution Schedule": {
+        "main": [[{ "node": "Login as Manager", "type": "main", "index": 0 }]]
+      },
+      "Login as Manager": {
+        "main": [[{ "node": "Run Monthly Distribution", "type": "main", "index": 0 }]]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": { "templateCredsSetupCompleted": true },
+    "tags": [],
+    "active": true,
+    "versionId": "rpt-monthly-ver-01"
+  }
+]

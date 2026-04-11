@@ -111,6 +111,11 @@ class TransactionResponse(BaseModel):
     risk_level:      str
     risk_factors:    list[str]
     ml_score_raw:    float | None
+    scoring_mode:    str | None = None
+    scorer_model_name: str | None = None
+    scorer_model_version: str | None = None
+    scorer_model_stage: str | None = None
+    scorer_registered_model_name: str | None = None
     alert_created:   bool
     alert_ref:       str | None
     transacted_at:   datetime
@@ -181,3 +186,9 @@ class ScorerResponse(BaseModel):
     risk_level:  str
     risk_factors: list[str] = []
     features:    dict[str, Any] = {}
+    scoring_mode: str = "unknown"
+    model_name: str | None = None
+    registered_model_name: str | None = None
+    model_version: str | None = None
+    model_stage: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

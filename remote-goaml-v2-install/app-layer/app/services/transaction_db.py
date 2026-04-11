@@ -15,6 +15,17 @@ from models.transaction import TransactionIngest, ScorerResponse
 from services.scorer import to_usd
 
 
+def _build_scorer_metadata(score: ScorerResponse) -> dict:
+    return {
+        "scoring_mode": score.scoring_mode,
+        "model_name": score.model_name,
+        "registered_model_name": score.registered_model_name,
+        "model_version": score.model_version,
+        "model_stage": score.model_stage,
+        "metadata": score.metadata or {},
+    }
+
+
 async def upsert_account(conn: asyncpg.Connection, account_ref: str) -> UUID | None:
     """Ensure account exists, return its UUID."""
     row = await conn.fetchrow(
@@ -45,6 +56,11 @@ async def create_transaction(
     """
     pool = get_pool()
     amount_usd = to_usd(txn.amount, txn.currency)
+    ml_features_payload = score.features if isinstance(score.features, dict) else {}
+    ml_features_payload = {
+        **ml_features_payload,
+        "scorer_metadata": _build_scorer_metadata(score),
+    }
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -109,7 +125,7 @@ async def create_transaction(
                 score.risk_level,
                 score.risk_factors,
                 score.risk_score,
-                json.dumps(score.features),
+                json.dumps(ml_features_payload),
                 txn.description,
                 txn.reference,
                 txn.channel,
@@ -164,6 +180,10 @@ async def create_alert(
     severity = "high" if score.risk_score >= settings.ALERT_THRESHOLD_HIGH else "medium"
     alert_type = _pick_alert_type(score.risk_factors)
     title = _build_alert_title(alert_type, score.risk_factors, amount_usd)
+    scorer_metadata = _build_scorer_metadata(score)
+    rule_id = score.registered_model_name or score.model_name or "ml_scorer_v1"
+    if score.model_version:
+        rule_id = f"{rule_id}:{score.model_version}"
 
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -182,9 +202,14 @@ async def create_alert(
             account_id,
             title,
             f"ML risk score: {score.risk_score:.4f} · Factors: {', '.join(score.risk_factors)}",
-            json.dumps({"risk_score": score.risk_score, "risk_factors": score.risk_factors,
-                        "amount_usd": amount_usd, "transaction_ref": transaction_ref}),
-            "ml_scorer_v1",
+            json.dumps({
+                "risk_score": score.risk_score,
+                "risk_factors": score.risk_factors,
+                "amount_usd": amount_usd,
+                "transaction_ref": transaction_ref,
+                "scorer_metadata": scorer_metadata,
+            }),
+            rule_id,
         )
 
     return {

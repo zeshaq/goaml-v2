@@ -36,6 +36,10 @@ services:
       YENTE_URL: http://goaml-yente:8000
       TIKA_URL: http://goaml-tika:9998
       MLFLOW_TRACKING_URI: http://goaml-mlflow:5000
+      MLFLOW_PUBLIC_URL: http://160.30.63.131:5000
+      MLFLOW_EXPERIMENT_NAME: goaml-scorer
+      SCORER_REGISTERED_MODEL_NAME: goaml-xgboost-scorer
+      SCORER_DEPLOYED_MODEL_NAME: aml-xgboost-risk-scorer
       SCORER_URL: http://160.30.63.152:8010
       # Compatibility aliases for older code paths
       LLM_BASE_URL: http://160.30.63.152:8000/v1

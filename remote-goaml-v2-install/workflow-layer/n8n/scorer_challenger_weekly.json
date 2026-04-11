@@ -1,0 +1,105 @@
+[
+  {
+    "name": "goAML Scorer Challenger Weekly",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  0
+                ],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 20
+              }
+            ]
+          }
+        },
+        "id": "d41230cf-064f-4299-82f7-3173f6b7d8cf",
+        "name": "Weekly Challenger Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/model-ops/scorer/challenger/evaluate",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"actor\":\"n8n-scorer-challenger\",\"sample_size\":40,\"lookback_hours\":2160,\"notes\":\"Scheduled weekly champion/challenger comparison.\"}"
+        },
+        "id": "d1d39765-7fe5-4ac9-b0ce-b49fcf50a82f",
+        "name": "Evaluate Challenger",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/workflow/model-monitoring/notify",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"triggered_by\":\"n8n-scorer-challenger\",\"channels\":[\"slack\",\"email\"],\"include_stable\":false,\"force\":false}"
+        },
+        "id": "51370877-c68e-44a8-8b3d-beb352170588",
+        "name": "Dispatch Challenger Alerts",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          860,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Weekly Challenger Schedule": {
+        "main": [
+          [
+            {
+              "node": "Evaluate Challenger",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Evaluate Challenger": {
+        "main": [
+          [
+            {
+              "node": "Dispatch Challenger Alerts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "35d89157-4af7-46b6-a8b9-f2441b865970"
+  }
+]

@@ -3,6 +3,17 @@ services:
     build: .
     container_name: goaml-scorer
     restart: unless-stopped
+    environment:
+      SCORER_MODEL_NAME: aml-xgboost-risk-scorer
+      SCORER_REGISTERED_MODEL_NAME: goaml-xgboost-scorer
+      MLFLOW_TRACKING_URI: http://160.30.63.131:5000
+      MLFLOW_EXPERIMENT_NAME: goaml-scorer
+      MLFLOW_S3_ENDPOINT_URL: http://160.30.63.131:9002
+      MLFLOW_ARTIFACT_BUCKET: mlflow-artifacts
+      MLFLOW_ARTIFACT_PREFIX: scorer-registry
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: Asdf@1234
+      SCORER_ALLOW_BOOTSTRAP: "true"
     ports:
       - "8010:8010"
     volumes:

@@ -1,0 +1,7 @@
+{
+  "model_name": "aml-xgboost-risk-scorer",
+  "registered_model_name": "goaml-xgboost-scorer",
+  "model_version": null,
+  "model_stage": null,
+  "source": "gpu-01-local-model-dir"
+}

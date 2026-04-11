@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from core.database import get_pool
+from models.analyst_ops import BulkAlertActionRequest
 from models.casework import AlertActionRequest, AlertInvestigateRequest, AlertStatusUpdate, CaseCreate
 from services.cases import create_case, get_case_detail
 from services.graph_sync import safe_resync_graph
@@ -78,6 +79,7 @@ async def list_alerts(
     offset: int,
     status: str | None,
     severity: str | None,
+    assigned_to: str | None,
 ) -> list[dict[str, Any]]:
     pool = get_pool()
     conditions = ["1=1"]
@@ -92,6 +94,11 @@ async def list_alerts(
     if severity:
         conditions.append(f"severity = ${idx}::risk_level")
         args.append(severity)
+        idx += 1
+
+    if assigned_to:
+        conditions.append(f"assigned_to = ${idx}")
+        args.append(assigned_to)
         idx += 1
 
     where = " AND ".join(conditions)
@@ -404,4 +411,136 @@ async def run_alert_action(alert_id: UUID, payload: AlertActionRequest) -> dict[
         "action": action,
         "alert": await get_alert(alert_id),
         "case": case_detail,
+    }
+
+
+async def run_bulk_alert_actions(payload: BulkAlertActionRequest) -> dict[str, Any]:
+    action = str(payload.action or "").strip().lower()
+    actor = payload.actor or payload.assigned_to
+    results: list[dict[str, Any]] = []
+    success_count = 0
+
+    if action == "assign":
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for alert_id in payload.alert_ids:
+                    current = await conn.fetchrow(
+                        """
+                        SELECT id, alert_ref, metadata, status, assigned_to
+                        FROM alerts
+                        WHERE id = $1
+                        FOR UPDATE
+                        """,
+                        alert_id,
+                    )
+                    if not current:
+                        results.append(
+                            {
+                                "alert_id": alert_id,
+                                "action": action,
+                                "status": "failed",
+                                "message": "Alert not found",
+                            }
+                        )
+                        continue
+                    metadata = _normalize_json_dict(current["metadata"])
+                    metadata = _append_alert_note(
+                        metadata,
+                        action="assign",
+                        actor=actor,
+                        note=payload.note or f"Alert assigned to {payload.assigned_to or 'unassigned'}.",
+                        status=current["status"],
+                        assigned_to=payload.assigned_to,
+                    )
+                    await conn.execute(
+                        """
+                        UPDATE alerts
+                        SET
+                            assigned_to = $2,
+                            metadata = $3::jsonb,
+                            updated_at = NOW()
+                        WHERE id = $1
+                        """,
+                        alert_id,
+                        payload.assigned_to,
+                        json.dumps(metadata),
+                    )
+                    results.append(
+                        {
+                            "alert_id": alert_id,
+                            "action": action,
+                            "status": "success",
+                            "alert_ref": current["alert_ref"],
+                            "message": f"Assigned to {payload.assigned_to or 'unassigned'}",
+                        }
+                    )
+                    success_count += 1
+        if success_count:
+            await safe_resync_graph(clear_existing=True)
+    else:
+        for alert_id in payload.alert_ids:
+            try:
+                result = await run_alert_action(
+                    alert_id,
+                    AlertActionRequest(
+                        action=action,
+                        actor=actor,
+                        assigned_to=payload.assigned_to,
+                        note=payload.note,
+                        create_case=payload.create_case,
+                        priority=payload.priority or "high",
+                        case_title=payload.case_title,
+                        case_description=payload.case_description,
+                    ),
+                )
+                if not result:
+                    results.append(
+                        {
+                            "alert_id": alert_id,
+                            "action": action,
+                            "status": "failed",
+                            "message": "Alert not found",
+                        }
+                    )
+                    continue
+                case_detail = result.get("case") or {}
+                results.append(
+                    {
+                        "alert_id": alert_id,
+                        "action": action,
+                        "status": "success",
+                        "alert_ref": result["alert"]["alert_ref"],
+                        "case_id": case_detail.get("id"),
+                        "case_ref": case_detail.get("case_ref"),
+                        "message": f"Alert {action.replace('_', ' ')} completed.",
+                    }
+                )
+                success_count += 1
+            except Exception as exc:
+                results.append(
+                    {
+                        "alert_id": alert_id,
+                        "action": action,
+                        "status": "failed",
+                        "message": str(exc),
+                    }
+                )
+
+    failure_count = len(results) - success_count
+    summary = [
+        f"Processed {len(results)} alerts for bulk action {action}.",
+        f"{success_count} succeeded and {failure_count} failed.",
+    ]
+    created_cases = sum(1 for item in results if item.get("case_id"))
+    if created_cases:
+        summary.append(f"{created_cases} alerts were linked to investigation cases.")
+    return {
+        "action": action,
+        "processed_count": len(results),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "results": results,
+        "summary": summary,
+        "generated_at": datetime.now(timezone.utc),
     }

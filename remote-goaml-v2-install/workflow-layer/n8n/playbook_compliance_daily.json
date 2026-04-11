@@ -1,0 +1,80 @@
+[
+  {
+    "name": "goAML Playbook Compliance Automation Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "triggerAtHour": 8,
+                "triggerAtMinute": 5
+              }
+            ]
+          }
+        },
+        "id": "d2eb3fbe-b7fb-4a98-9504-7d0f9b26f0fd",
+        "name": "Weekday Playbook Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/workflow/playbooks/automate",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"triggered_by\":\"n8n-playbook-automation\",\"force\":false}"
+        },
+        "id": "50b8c09d-4f6b-4af0-9e97-ced6ff8adf25",
+        "name": "Run Playbook Automation",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          580,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Weekday Playbook Schedule": {
+        "main": [
+          [
+            {
+              "node": "Run Playbook Automation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "c7d49db5-d73d-4c5a-8c93-2e34ab8f6185"
+  }
+]

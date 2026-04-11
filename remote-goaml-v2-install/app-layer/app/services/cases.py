@@ -15,6 +15,7 @@ import httpx
 
 from core.config import settings
 from core.database import get_pool
+from models.analyst_ops import BulkSarActionRequest
 from models.casework import (
     CaseCreate,
     CaseNoteCreate,
@@ -23,8 +24,12 @@ from models.casework import (
     CaseUpdate,
     SarDraftRequest,
     SarFileRequest,
+    SarUpdateRequest,
     SarWorkflowRequest,
 )
+from services.case_playbooks import apply_case_playbook, enforce_case_playbook, resolve_playbook_sla_hours
+from services.case_grounding import build_case_grounding
+from services.case_context import get_case_context
 from services.graph_sync import safe_resync_graph
 from services.routing import resolve_case_routing, routing_metadata_payload
 from services.workflow_engine import advance_sar_camunda_flow
@@ -95,14 +100,12 @@ def _sar_queue_bucket(status: str | None) -> str:
     return "other"
 
 
-def _sar_queue_sla_hours(queue_key: str) -> float | None:
-    if queue_key == "draft":
-        return settings.SAR_DRAFT_SLA_HOURS
-    if queue_key == "review":
-        return settings.SAR_REVIEW_SLA_HOURS
-    if queue_key == "approval":
-        return settings.SAR_APPROVAL_SLA_HOURS
-    return None
+def _sar_queue_sla_hours(queue_key: str, *, case_metadata: dict[str, Any] | None = None, case_priority: str | None = None) -> float | None:
+    return resolve_playbook_sla_hours(
+        queue_key=queue_key,
+        case_metadata=case_metadata,
+        case_priority=case_priority,
+    )
 
 
 def _workflow_timestamp(metadata: dict[str, Any], *, action: str | None = None, status: str | None = None) -> datetime | None:
@@ -287,6 +290,7 @@ def _normalize_task_item(item: dict[str, Any]) -> dict[str, Any]:
         value = normalized.get(key)
         if isinstance(value, datetime):
             normalized[key] = value.isoformat()
+    normalized["metadata"] = _normalize_json_dict(normalized.get("metadata"))
     return normalized
 
 
@@ -379,6 +383,7 @@ async def create_case(payload: CaseCreate) -> dict[str, Any]:
                 }),
             )
 
+    await apply_case_playbook(case_id, actor=payload.created_by)
     await safe_resync_graph(clear_existing=True)
     return await get_case_detail(case_id)
 
@@ -487,7 +492,95 @@ async def get_case_sar(case_id: UUID) -> dict[str, Any] | None:
 
     result = dict(sar_row)
     result["metadata"] = _normalize_json_dict(result.get("metadata"))
+    result["used_evidence"] = [
+        item for item in _normalize_json_list(result["metadata"].get("used_evidence")) if isinstance(item, dict)
+    ]
     result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
+    return result
+
+
+async def update_sar(case_id: UUID, payload: SarUpdateRequest) -> dict[str, Any] | None:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            case_row = await conn.fetchrow("SELECT sar_id FROM cases WHERE id = $1", case_id)
+            if not case_row:
+                return None
+            if not case_row["sar_id"]:
+                return {}
+
+            sar_row = await conn.fetchrow("SELECT * FROM sar_reports WHERE id = $1 FOR UPDATE", case_row["sar_id"])
+            if not sar_row:
+                return {}
+            if str(sar_row["status"]).lower() == "filed":
+                raise ValueError("Filed SARs cannot be edited.")
+
+            metadata = _normalize_json_dict(sar_row.get("metadata"))
+            edit_history = _normalize_json_list(metadata.get("manual_edit_history"))
+            if payload.note or payload.editor:
+                edit_history.append(
+                    {
+                        "editor": payload.editor,
+                        "note": payload.note,
+                        "created_at": _task_now_iso(),
+                    }
+                )
+            metadata["manual_edit_history"] = edit_history[-25:]
+            if payload.narrative:
+                metadata["last_saved_narrative"] = payload.narrative
+            if payload.note:
+                metadata["latest_editor_note"] = payload.note
+
+            updated = await conn.fetchrow(
+                """
+                UPDATE sar_reports
+                SET
+                    narrative = COALESCE($2, narrative),
+                    subject_name = COALESCE($3, subject_name),
+                    subject_type = COALESCE($4::entity_type, subject_type),
+                    subject_account = COALESCE($5, subject_account),
+                    activity_type = COALESCE($6, activity_type),
+                    metadata = $7::jsonb,
+                    updated_at = NOW()
+                WHERE id = $1
+                RETURNING *
+                """,
+                case_row["sar_id"],
+                payload.narrative,
+                payload.subject_name,
+                payload.subject_type,
+                payload.subject_account,
+                payload.activity_type,
+                json.dumps(metadata),
+            )
+            if not updated:
+                return {}
+
+            await conn.execute(
+                """
+                INSERT INTO case_events (case_id, event_type, actor, detail, metadata)
+                VALUES ($1, 'sar_updated', $2, $3, $4::jsonb)
+                """,
+                case_id,
+                payload.editor,
+                "SAR draft updated",
+                json.dumps(
+                    {
+                        "note": payload.note,
+                        "narrative_updated": bool(payload.narrative),
+                        "subject_name_updated": bool(payload.subject_name),
+                        "activity_type_updated": bool(payload.activity_type),
+                    }
+                ),
+            )
+
+    result = dict(updated)
+    result["metadata"] = _normalize_json_dict(result.get("metadata"))
+    result["used_evidence"] = [
+        item for item in _normalize_json_list(result["metadata"].get("used_evidence")) if isinstance(item, dict)
+    ]
+    result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
+    await safe_resync_graph(clear_existing=True)
     return result
 
 
@@ -501,7 +594,11 @@ def _normalize_sar_queue_item(row: dict[str, Any]) -> dict[str, Any]:
     queue_key = _sar_queue_bucket(item.get("sar_status"))
     queue_owner = _sar_queue_owner(item, queue_key)
     age_reference = _sar_queue_age_reference(item, metadata, queue_key)
-    sla_hours = _sar_queue_sla_hours(queue_key)
+    sla_hours = _sar_queue_sla_hours(
+        queue_key,
+        case_metadata=item.get("case_metadata"),
+        case_priority=item.get("case_priority"),
+    )
     age_hours = None
     sla_due_at = None
     if age_reference:
@@ -876,6 +973,7 @@ async def add_case_task(case_id: UUID, payload: CaseTaskCreate) -> dict[str, Any
         "updated_at": _task_now_iso(),
         "due_at": payload.due_at.isoformat() if payload.due_at else None,
         "completed_at": None,
+        "metadata": payload.metadata,
     }
 
     async with pool.acquire() as conn:
@@ -1091,6 +1189,7 @@ async def update_case(case_id: UUID, payload: CaseUpdate) -> dict[str, Any] | No
                 }),
             )
 
+    await apply_case_playbook(case_id, actor=payload.event_actor)
     await safe_resync_graph(clear_existing=True)
     return await get_case_detail(case_id)
 
@@ -1122,6 +1221,14 @@ async def draft_sar(case_id: UUID, payload: SarDraftRequest) -> dict[str, Any] |
             """,
             case_id,
         )
+    context = await get_case_context(case_id, document_limit=4, related_limit=6)
+    grounding = await build_case_grounding(
+        case_id,
+        context=context,
+        prioritize_pinned_evidence=payload.prioritize_pinned_evidence,
+        filing_only=True,
+        limit=8,
+    )
 
     amount_values = [float(t["amount_usd"] or t["amount"] or 0) for t in txns]
     activity_amount = sum(amount_values) if amount_values else None
@@ -1131,7 +1238,7 @@ async def draft_sar(case_id: UUID, payload: SarDraftRequest) -> dict[str, Any] |
     subject_name = payload.subject_name or _guess_subject_name(txns, case_row["title"])
     activity_type = payload.activity_type or _infer_activity_type(txns)
 
-    narrative, ai_drafted, ai_model = await _generate_sar_narrative(case_row, txns, alerts, payload)
+    narrative, ai_drafted, ai_model = await _generate_sar_narrative(case_row, txns, alerts, payload, grounding.get("used_evidence", []))
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1166,6 +1273,12 @@ async def draft_sar(case_id: UUID, payload: SarDraftRequest) -> dict[str, Any] |
                     "alert_refs": [a["alert_ref"] for a in alerts],
                     "transaction_count": len(txns),
                     "draft_mode": "llm" if ai_drafted else "template_fallback",
+                    "initial_draft_narrative": narrative,
+                    "last_saved_narrative": narrative,
+                    "draft_origin": "command_center" if payload.drafted_by else "system",
+                    "used_evidence": grounding.get("used_evidence", []),
+                    "grounding_mode": grounding.get("grounding_mode"),
+                    "grounded_with_pinned_evidence": payload.prioritize_pinned_evidence,
                 }),
             )
 
@@ -1187,17 +1300,29 @@ async def draft_sar(case_id: UUID, payload: SarDraftRequest) -> dict[str, Any] |
                 case_id,
                 payload.drafted_by,
                 "SAR draft created",
-                json.dumps({"sar_id": str(sar["id"]), "sar_ref": sar["sar_ref"]}),
+                json.dumps(
+                    {
+                        "sar_id": str(sar["id"]),
+                        "sar_ref": sar["sar_ref"],
+                        "grounding_mode": grounding.get("grounding_mode"),
+                        "used_evidence_count": len(grounding.get("used_evidence", [])),
+                    }
+                ),
             )
 
     result = dict(sar)
     result["metadata"] = _normalize_json_dict(result.get("metadata"))
+    result["used_evidence"] = [
+        item for item in _normalize_json_list(result["metadata"].get("used_evidence")) if isinstance(item, dict)
+    ]
     result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
     await safe_resync_graph(clear_existing=True)
     return result
 
 
 async def advance_sar_workflow(case_id: UUID, payload: SarWorkflowRequest) -> dict[str, Any] | None:
+    if payload.action.value == "submit_review":
+        await enforce_case_playbook(case_id, stage="submit_review")
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1284,6 +1409,10 @@ async def advance_sar_workflow(case_id: UUID, payload: SarWorkflowRequest) -> di
             )
             metadata["workflow_history"] = history[-40:]
             metadata["latest_workflow_note"] = note
+            if payload.action.value in {"submit_review", "reject"} and note:
+                metadata["reviewer_note"] = note
+            if payload.action.value == "approve" and note:
+                metadata["approver_note"] = note
             if payload.action.value == "reject":
                 metadata["latest_rejection_reason"] = note
             update_args[-1] = json.dumps(metadata)
@@ -1312,6 +1441,9 @@ async def advance_sar_workflow(case_id: UUID, payload: SarWorkflowRequest) -> di
 
     result = dict(sar)
     result["metadata"] = _normalize_json_dict(result.get("metadata"))
+    result["used_evidence"] = [
+        item for item in _normalize_json_list(result["metadata"].get("used_evidence")) if isinstance(item, dict)
+    ]
     result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
     await safe_resync_graph(clear_existing=True)
     await advance_sar_camunda_flow(case_id, action=payload.action.value, actor=actor, note=note)
@@ -1319,6 +1451,7 @@ async def advance_sar_workflow(case_id: UUID, payload: SarWorkflowRequest) -> di
 
 
 async def file_sar(case_id: UUID, payload: SarFileRequest) -> dict[str, Any] | None:
+    await enforce_case_playbook(case_id, stage="file")
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1352,6 +1485,9 @@ async def file_sar(case_id: UUID, payload: SarFileRequest) -> dict[str, Any] | N
                 }
             )
             metadata["workflow_history"] = history[-40:]
+            metadata["filing_note"] = payload.filing_ref
+            metadata["final_filed_narrative"] = sar["narrative"]
+            metadata["last_saved_narrative"] = sar["narrative"]
 
             sar = await conn.fetchrow(
                 """
@@ -1399,9 +1535,110 @@ async def file_sar(case_id: UUID, payload: SarFileRequest) -> dict[str, Any] | N
 
     result = dict(sar)
     result["metadata"] = _normalize_json_dict(result.get("metadata"))
+    result["used_evidence"] = [
+        item for item in _normalize_json_list(result["metadata"].get("used_evidence")) if isinstance(item, dict)
+    ]
     result["activity_amount"] = float(result["activity_amount"]) if result.get("activity_amount") is not None else None
     await safe_resync_graph(clear_existing=True)
     return result
+
+
+async def run_bulk_sar_queue_actions(payload: BulkSarActionRequest) -> dict[str, Any]:
+    action = str(payload.action or "").strip().lower()
+    actor = payload.actor or payload.assigned_to
+    results: list[dict[str, Any]] = []
+    success_count = 0
+
+    for case_id in payload.case_ids:
+        try:
+            if action == "assign_owner":
+                case_detail = await update_case(
+                    case_id,
+                    CaseUpdate(
+                        assigned_to=payload.assigned_to,
+                        event_actor=actor,
+                        event_detail=f"SAR queue owner reassigned to {payload.assigned_to or 'unassigned'}",
+                    ),
+                )
+                if not case_detail:
+                    raise ValueError("Case not found")
+                results.append(
+                    {
+                        "case_id": case_id,
+                        "action": action,
+                        "status": "success",
+                        "case_ref": case_detail.get("case_ref"),
+                        "sar_id": case_detail.get("sar_id"),
+                        "message": f"Assigned to {payload.assigned_to or 'unassigned'}",
+                    }
+                )
+                success_count += 1
+                continue
+
+            if action == "file":
+                sar_detail = await file_sar(
+                    case_id,
+                    SarFileRequest(
+                        filed_by=actor,
+                        reviewed_by=actor,
+                        approved_by=actor,
+                        filing_ref=(
+                            f"{payload.filing_ref_prefix}-{str(case_id)[:8]}".upper()
+                            if payload.filing_ref_prefix
+                            else None
+                        ),
+                    ),
+                )
+            else:
+                sar_detail = await advance_sar_workflow(
+                    case_id,
+                    SarWorkflowRequest(
+                        action=action,
+                        actor=actor,
+                        note=payload.note,
+                    ),
+                )
+            if not sar_detail:
+                raise ValueError("Case or SAR not found")
+            case_detail = await get_case_detail(case_id)
+            results.append(
+                {
+                    "case_id": case_id,
+                    "action": action,
+                    "status": "success",
+                    "case_ref": case_detail.get("case_ref") if case_detail else None,
+                    "sar_id": sar_detail.get("id"),
+                    "sar_ref": sar_detail.get("sar_ref"),
+                    "message": f"SAR action {action.replace('_', ' ')} completed.",
+                }
+            )
+            success_count += 1
+        except Exception as exc:
+            results.append(
+                {
+                    "case_id": case_id,
+                    "action": action,
+                    "status": "failed",
+                    "message": str(exc),
+                }
+            )
+
+    failure_count = len(results) - success_count
+    summary = [
+        f"Processed {len(results)} SAR queue items for bulk action {action}.",
+        f"{success_count} succeeded and {failure_count} failed.",
+    ]
+    if payload.assigned_to and action == "assign_owner":
+        summary.append(f"Bulk assignment targeted {payload.assigned_to}.")
+    return {
+        "action": action,
+        "processed_count": len(results),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "results": results,
+        "summary": summary,
+        "generated_at": datetime.now(timezone.utc),
+    }
 
 
 def _infer_activity_type(txns: list[Any]) -> str | None:
@@ -1449,9 +1686,10 @@ async def _generate_sar_narrative(
     txns: list[Any],
     alerts: list[Any],
     payload: SarDraftRequest,
+    used_evidence: list[dict[str, Any]],
 ) -> tuple[str, bool, str]:
     fallback = _build_sar_narrative(case_row, txns, alerts, payload)
-    prompt = _build_sar_prompt(case_row, txns, alerts, payload)
+    prompt = _build_sar_prompt(case_row, txns, alerts, payload, used_evidence)
     url = f"{settings.LLM_PRIMARY_URL.rstrip('/')}/chat/completions"
     body = {
         "model": settings.LLM_PRIMARY_MODEL,
@@ -1488,7 +1726,13 @@ async def _generate_sar_narrative(
         return fallback, False, "template-v1"
 
 
-def _build_sar_prompt(case_row: Any, txns: list[Any], alerts: list[Any], payload: SarDraftRequest) -> str:
+def _build_sar_prompt(
+    case_row: Any,
+    txns: list[Any],
+    alerts: list[Any],
+    payload: SarDraftRequest,
+    used_evidence: list[dict[str, Any]],
+) -> str:
     tx_lines: list[str] = []
     for txn in txns[:10]:
         tx_lines.append(
@@ -1517,6 +1761,18 @@ def _build_sar_prompt(case_row: Any, txns: list[Any], alerts: list[Any], payload
         )
         for alert in alerts
     ]
+    evidence_lines = [
+        " | ".join(
+            [
+                f"type={item.get('evidence_type')}",
+                f"title={item.get('title')}",
+                f"importance={item.get('importance')}",
+                f"include_in_sar={item.get('include_in_sar')}",
+                f"summary={item.get('summary')}",
+            ]
+        )
+        for item in used_evidence[:8]
+    ]
 
     subject_name = payload.subject_name or _guess_subject_name(txns, case_row["title"]) or "Unknown subject"
     subject_type = payload.subject_type or "unknown"
@@ -1536,8 +1792,10 @@ def _build_sar_prompt(case_row: Any, txns: list[Any], alerts: list[Any], payload
         f"{chr(10).join(alert_lines) if alert_lines else 'None'}\n\n"
         "Linked transactions:\n"
         f"{chr(10).join(tx_lines) if tx_lines else 'None'}\n\n"
+        "Grounded evidence to prioritize:\n"
+        f"{chr(10).join(evidence_lines) if evidence_lines else 'None'}\n\n"
         "Write a polished SAR narrative in 2-4 short paragraphs. Include why the activity appears suspicious, "
-        "reference transaction behavior and alert indicators, and do not invent facts beyond the supplied case data."
+        "reference transaction behavior and alert indicators, use the grounded evidence set where relevant, and do not invent facts beyond the supplied case data."
     )
 
 

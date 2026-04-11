@@ -1,0 +1,108 @@
+[
+  {
+    "name": "goAML Manager Report Daily CSV",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 10
+              }
+            ]
+          }
+        },
+        "id": "9b53e4e5-2bb6-4865-88ef-12e3f083d520",
+        "name": "Weekday Manager Report Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          260,
+          260
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/auth/login",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"username\":\"manager1\",\"password\":\"Goaml!2026\"}"
+        },
+        "id": "0b26d5fd-5f3c-40db-a513-b0d78a209bef",
+        "name": "Login as Manager",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          260
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "http://goaml-fastapi:8000/api/v1/manager/reports/export?range_days=180&format=csv",
+          "sendHeaders": true,
+          "specifyHeaders": "json",
+          "jsonHeaders": "={\"Authorization\":\"Bearer \" + $json.access_token}"
+        },
+        "id": "7d408806-d6e0-47ef-8eff-e2e8d0c6f7f8",
+        "name": "Export Manager CSV Report",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          860,
+          260
+        ]
+      }
+    ],
+    "connections": {
+      "Weekday Manager Report Schedule": {
+        "main": [
+          [
+            {
+              "node": "Login as Manager",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Login as Manager": {
+        "main": [
+          [
+            {
+              "node": "Export Manager CSV Report",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "1e521fab-5f6e-4da5-86d3-5b8f91cde079"
+  }
+]

@@ -1,10 +1,17 @@
 # goAML-v2 Implementation Plan v3
 
-> Detailed implementation guide for the current goAML-v2 build, covering the architecture decisions, deployment structure, step-by-step implementation work completed so far, verification approach, and recommended continuation path.
+> Detailed implementation guide for the current goAML-v2 build, covering the architecture decisions, deployment structure, step-by-step implementation work completed so far, verification approach, and recommended continuation path, including the live local-auth/profile layer, future WSO2-ready settings surface, the playbook compliance / typology outcome analytics layer, the upgraded team/region playbook hotspot boards, automated playbook enforcement for stuck checklist and evidence-gap intervention, manager-facing tuning of those intervention thresholds from the UI, the management reporting/export layer with scheduled n8n report generation, threshold-based reporting alerts, manager action recommendations, and board-level reporting packs, the new decision-quality analytics plus closed-loop feedback loop across alerts and cases, and the latest maturity implementation slice for analyst productivity, advanced manager controls, workflow exceptions, document/evidence intelligence, entity/network intelligence, and model-tuning governance handoff.
 
 ## 1. Purpose
 
 This document is the implementation companion to [goaml-v2-project-overview-v3.md](/Users/ze/Documents/goaml-v2/goaml-v2-project-overview-v3.md).
+
+The documentation set for ongoing maintenance now also includes:
+
+- [end-user-manual.md](/Users/ze/Documents/goaml-v2/end-user-manual.md)
+- [product-feature-document.md](/Users/ze/Documents/goaml-v2/product-feature-document.md)
+- [admin-manual.md](/Users/ze/Documents/goaml-v2/admin-manual.md)
+- [platform-functional-features.md](/Users/ze/Documents/goaml-v2/platform-functional-features.md)
 
 It answers a different question:
 
@@ -17,6 +24,16 @@ This is meant to help:
 - redeploy or reproduce the current environment
 - onboard a new engineer quickly
 - separate completed work from future work
+
+Documentation maintenance rule going forward:
+
+- after each implementation phase, update:
+  - [goaml-v2-project-overview-v3.md](/Users/ze/Documents/goaml-v2/goaml-v2-project-overview-v3.md)
+  - [implementation-plan-v3.md](/Users/ze/Documents/goaml-v2/implementation-plan-v3.md)
+  - [end-user-manual.md](/Users/ze/Documents/goaml-v2/end-user-manual.md)
+  - [product-feature-document.md](/Users/ze/Documents/goaml-v2/product-feature-document.md)
+  - [admin-manual.md](/Users/ze/Documents/goaml-v2/admin-manual.md)
+  - [platform-functional-features.md](/Users/ze/Documents/goaml-v2/platform-functional-features.md)
 
 ## 2. Final Architecture We Implemented
 
@@ -94,27 +111,75 @@ flowchart TD
 
 Backend API routes:
 
+- [auth.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/auth.py)
 - [alerts.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/alerts.py)
+- [analyst.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/analyst.py)
 - [cases.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/cases.py)
 - [documents.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/documents.py)
 - [entities.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/entities.py)
 - [graph.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/graph.py)
+- [manager.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/manager.py)
+- [model_ops.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/model_ops.py)
 - [screening.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/screening.py)
 - [transactions.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/transactions.py)
+- [views.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/views.py)
+- [workflows.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/workflows.py)
 
 Backend services:
 
+- [auth.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/auth.py)
+- [analyst_context.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/analyst_context.py)
 - [alerts.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/alerts.py)
 - [cases.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/cases.py)
 - [case_context.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/case_context.py)
 - [case_summary.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/case_summary.py)
+- [case_workspace.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/case_workspace.py)
 - [documents.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/documents.py)
 - [entities.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/entities.py)
 - [graph.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/graph.py)
 - [graph_sync.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/graph_sync.py)
+- [model_registry.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/model_registry.py)
+- [notification_center.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/notification_center.py)
+- [playbook_analytics.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/playbook_analytics.py)
+- [saved_views.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/saved_views.py)
 - [screening.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/screening.py)
 - [scorer.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/scorer.py)
+- [sla_analytics.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/sla_analytics.py)
 - [transaction_db.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/transaction_db.py)
+- [workflow_engine.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/workflow_engine.py)
+- [maturity_features.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/maturity_features.py)
+
+## 3.4 Latest Implementation Slice
+
+The newest completed feature wave widened six maturity areas without waiting for v3-style row-level partitioning:
+
+- analyst productivity:
+  - alert and SAR bulk-action previews
+  - queue next/previous navigation
+  - action note templates
+  - keyboard shortcuts for `Alert Desk` and `SAR Queue`
+- manager control:
+  - advanced manager controls
+  - saved workspace presets
+  - balancing rules
+  - intervention suggestions
+  - team and region hotspot boards
+- workflow orchestration depth:
+  - workflow exception inventory
+  - guided-state visibility
+  - intervention actions from `Workflow Ops`
+- document and evidence intelligence:
+  - duplicate candidates
+  - related-document surfacing
+  - provenance trails
+  - filing-pack impact visibility
+- entity and network intelligence:
+  - network risk summary
+  - watch patterns
+  - graph-driven recommendations
+- model and decisioning depth:
+  - tuning recommendations
+  - governance handoff from `Model Ops`
 
 UI:
 
@@ -139,8 +204,17 @@ Workflow automation assets:
 - [watchlist_rescreen_daily_due.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/watchlist_rescreen_daily_due.json)
 - [watchlist_rescreen_weekly_full.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/watchlist_rescreen_weekly_full.json)
 - [sar_queue_rebalance_daily.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/sar_queue_rebalance_daily.json)
+- [scorer_drift_monitor_daily.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/scorer_drift_monitor_daily.json)
+- [scorer_challenger_weekly.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/scorer_challenger_weekly.json)
+- [manager_report_daily_csv.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/manager_report_daily_csv.json)
+- [executive_report_weekly_pdf.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/executive_report_weekly_pdf.json)
+- [reporting_alerts_daily.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/reporting_alerts_daily.json)
+- [report_distribution_monthly.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/report_distribution_monthly.json)
+- [report_distribution_quarterly.json](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/n8n/report_distribution_quarterly.json)
 - [install_watchlist_rescreen_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_watchlist_rescreen_n8n.sh)
 - [install_sar_queue_rebalance_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_sar_queue_rebalance_n8n.sh)
+- [install_model_monitoring_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_model_monitoring_n8n.sh)
+- [install_management_reports_n8n.sh](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/workflow-layer/scripts/install_management_reports_n8n.sh)
 
 GPU model deployment copies:
 
@@ -434,6 +508,8 @@ What was done:
   - weekly full watchlist re-screen
   - daily SAR queue rebalance
   - daily SAR SLA notification dispatch
+  - daily scorer drift capture plus alert dispatch
+  - weekly scorer challenger evaluation plus alert dispatch
 - added Camunda BPMN deployments for:
   - `goamlSarFormalReview`
   - `goamlWatchlistEscalation`
@@ -450,7 +526,7 @@ Result:
 - SLA notifications now create auditable notification history even before Slack or SMTP credentials are configured
 - n8n is actively scheduled for recurring watchlist and SLA automation, even though manual ad hoc execution is still gated by n8n's own auth model
 
-### Step 15. Implement persistent graph sync into Neo4j
+### Step 16. Implement persistent graph sync into Neo4j
 
 What was done:
 
@@ -464,7 +540,7 @@ Result:
 - graph exploration is no longer an on-demand relational approximation only
 - the analyst UI can query persisted graph evidence and paths
 
-### Step 16. Build graph-driven analyst workflows
+### Step 17. Build graph-driven analyst workflows
 
 What was done:
 
@@ -477,7 +553,7 @@ Result:
 
 - graph reasoning is now part of everyday investigation workflows
 
-### Step 17. Seed dense AML data for realistic testing
+### Step 18. Seed dense AML data for realistic testing
 
 What was done:
 
@@ -498,7 +574,7 @@ Latest verified seed state:
 - SARs: `16`
 - persisted Neo4j graph: `1365` nodes and `3251` edges
 
-### Step 18. Implement entity profile, watchlist, and merge workflows
+### Step 19. Implement entity profile, watchlist, and merge workflows
 
 What was done:
 
@@ -514,7 +590,7 @@ Result:
 
 - entity resolution is now a first-class analyst activity, not just a side effect of screening
 
-### Step 19. Add dedicated reviewer and watchlist dashboards
+### Step 20. Add dedicated reviewer and watchlist dashboards
 
 What was done:
 
@@ -528,6 +604,152 @@ Result:
 
 - SAR work queues are first-class instead of hidden inside the case panel
 - watchlist entities and watchlist review cases are visible in one place
+
+### Step 21. Finish the Case Command Center
+
+What was done:
+
+- made the Case Command Center the default case-open path across case-linked flows
+- added case workspace aggregation on the backend:
+  - `GET /api/v1/cases/{id}/workspace`
+  - `GET /api/v1/cases/{id}/workflow`
+  - `GET /api/v1/cases/{id}/filing-readiness`
+- added normalized pinned evidence support:
+  - `GET /api/v1/cases/{id}/evidence`
+  - `POST /api/v1/cases/{id}/evidence/pin`
+  - `PATCH /api/v1/cases/{id}/evidence/{evidence_id}`
+  - `DELETE /api/v1/cases/{id}/evidence/{evidence_id}`
+- added SAR draft editing:
+  - `PATCH /api/v1/cases/{id}/sar`
+- added a tabbed case workspace in the UI:
+  - `Overview`
+  - `Evidence`
+  - `Graph`
+  - `Documents`
+  - `Timeline`
+  - `SAR`
+- added filing-readiness actions that jump analysts to the relevant tab
+- added evidence pinning from alerts, transactions, documents, screening hits, and graph relationships
+- added reviewer-grade SAR editing, evidence-in-filing view, and narrative comparison
+- added case-specific workflow details in the right rail:
+  - expected role
+  - process history
+  - latest automation touches
+  - deeplinked notifications
+  - direct links to Workflow Ops, n8n, and Camunda
+- added hash/deeplink routing for `/#case-command?case=...`
+
+Result:
+
+- the case workspace now behaves like a unified investigation cockpit instead of a long prototype page
+- reviewers and approvers can work from the same screen as analysts without losing workflow context
+- the deployed UI and backend now match the intended Command Center design closely enough to treat it as the primary case workspace
+
+### Step 22. Export Filing Packs as Analyst Artifacts
+
+What was done:
+
+- extended filing-pack generation so it can be exported directly from the API and Command Center UI
+- added backend export rendering in:
+  - `JSON`
+  - `PDF`
+  - `DOCX`
+- added `GET /api/v1/cases/{id}/filing-pack/export`
+- added export helpers for:
+  - attachment filename generation
+  - JSON-safe payload encoding
+  - PDF rendering
+  - DOCX rendering
+- added Command Center actions:
+  - `Download JSON`
+  - `Download PDF`
+  - `Download DOCX`
+- kept export payloads grounded on the same filing-pack content already used in the case workflow
+
+Result:
+
+- analysts can now download a portable filing artifact directly from the case workspace instead of relying only on in-browser review
+- the export flow supports structured machine-readable output (`JSON`) and human-friendly review/distribution formats (`PDF` and `DOCX`)
+- the downloadable artifact preserves the same evidence pack, workflow context, and collaboration context used inside the Command Center
+
+### Step 23. Add Local Auth, RBAC, and WSO2-Ready Settings
+
+What was done:
+
+- added local auth, self-service profile, and RBAC foundation in:
+  - [security.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/core/security.py)
+  - [auth.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/services/auth.py)
+  - [auth.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/api/v1/auth.py)
+  - [auth.py](/Users/ze/Documents/goaml-v2/remote-goaml-v2-install/app-layer/app/models/auth.py)
+- extended settings/config to support:
+  - local password auth
+  - JWT sessions
+  - future WSO2 / OIDC provider metadata
+- created persistent auth tables in PostgreSQL:
+  - `auth_roles`
+  - `app_users`
+  - `auth_provider_settings`
+  - `auth_audit_events`
+- seeded local roles:
+  - `analyst`
+  - `reviewer`
+  - `approver`
+  - `manager`
+  - `sanctions_analyst`
+  - `model_ops`
+  - `workflow_ops`
+  - `auditor`
+  - `admin`
+- seeded local bootstrap users:
+  - `analyst1`
+  - `reviewer1`
+  - `approver1`
+  - `manager1`
+  - `sanctions1`
+  - `modelops1`
+  - `workflowops1`
+  - `auditor1`
+  - `admin1`
+- used a shared bootstrap password from config for the demo seed:
+  - `Goaml!2026`
+- added live auth and profile endpoints:
+  - `POST /api/v1/auth/login`
+  - `POST /api/v1/auth/logout`
+  - `GET /api/v1/auth/me`
+  - `GET /api/v1/auth/profile`
+  - `PATCH /api/v1/auth/profile`
+  - `POST /api/v1/auth/change-password`
+  - `GET /api/v1/auth/settings`
+  - `PUT /api/v1/auth/settings/{provider_key}`
+  - `GET /api/v1/auth/roles`
+  - `GET /api/v1/auth/users`
+  - `POST /api/v1/auth/users`
+  - `PATCH /api/v1/auth/users/{username}`
+  - `POST /api/v1/auth/users/{username}/reset-password`
+  - `GET /api/v1/auth/audit`
+- protected business APIs with permission-aware dependencies
+- enforced SAR separation-of-duties rules so drafters/reviewers cannot self-approve or self-file the same SAR
+- normalized request actors and assignment changes so workflow actions follow the logged-in user rather than free-form client payloads
+- added a full-screen login overlay and role-aware app shell in the HTML UI
+- added a dedicated `My Profile` page with:
+  - editable identity details
+  - landing-desk preference
+  - self-service password change and logout
+- added a `Settings` desk with:
+  - current session summary
+  - change-my-password flow
+  - local auth provider settings
+  - WSO2 / OIDC provider forms kept ready for future activation
+  - local user and role administration
+  - auth audit visibility
+- added desk-level UI gating so each role sees only the desks it is allowed to open
+
+Result:
+
+- the analyst product no longer depends on anonymous access
+- role-aware desk visibility, protected APIs, and auth audit are now part of the live deployment
+- login, logout, self-service profile editing, and landing-desk preference are now part of the public analyst experience
+- the product can stay on local auth for now while preserving a clean future migration path to WSO2 or another external identity provider
 
 ## 5. Deployment and Update Procedure Used
 
@@ -618,9 +840,17 @@ ssh ze@gpu-01 'cd /path/to/model-folder && docker compose up -d --build'
 - `GET /api/v1/cases`
 - `GET /api/v1/cases/{id}`
 - `GET /api/v1/cases/{id}/events`
+- `GET /api/v1/cases/{id}/workspace`
+- `GET /api/v1/cases/{id}/workflow`
+- `GET /api/v1/cases/{id}/filing-readiness`
 - `GET /api/v1/cases/{id}/context`
+- `GET /api/v1/cases/{id}/evidence`
+- `POST /api/v1/cases/{id}/evidence/pin`
+- `PATCH /api/v1/cases/{id}/evidence/{evidence_id}`
+- `DELETE /api/v1/cases/{id}/evidence/{evidence_id}`
 - `POST /api/v1/cases/{id}/summary`
 - `POST /api/v1/cases/{id}/sar`
+- `PATCH /api/v1/cases/{id}/sar`
 - `POST /api/v1/cases/{id}/sar/review`
 - `POST /api/v1/cases/{id}/sar/file`
 - `GET /api/v1/sars/queue`
@@ -666,13 +896,23 @@ ssh ze@gpu-01 'cd /path/to/model-folder && docker compose up -d --build'
 
 The implemented platform now supports:
 
+- local username/password login with JWT sessions
+- self-service user profile and landing-desk preference
+- seeded roles, seeded demo users, and auth audit history
+- topbar profile/settings/logout controls in the live UI
+- role-aware launchpad and desk visibility
+- settings-driven local auth administration with future WSO2 / OIDC provider forms
 - transaction monitoring and risk scoring
 - alert triage, investigation, resolution, and escalation
 - case management with timeline history
+- a default Case Command Center with case-specific workflow state
+- tabbed case review across overview, evidence, graph, documents, timeline, and SAR
+- pinned evidence management and filing-readiness scoring
 - case collaboration notes and tasks
 - retrieval-backed investigation context
 - AI case summaries
 - LLM SAR drafting
+- reviewer-grade SAR editing and narrative comparison
 - SAR review, approval, rejection, and filing
 - reviewer / approver work queues
 - reviewer / approver SLA analytics and workload dashboards
@@ -695,15 +935,17 @@ The platform is already useful, but the following are still the main next steps:
 ### 8.1 Near-Term Engineering Work
 
 - deepen retrieval and rerank in case evidence assembly and summaries
-- add workload balancing and escalation logic on top of the SLA dashboards
+- use pinned evidence directly in AI summary and SAR prompt composition
+- expand evidence-pack generation for alerts, cases, and SAR filing outputs
 - expand recurring watchlist automation beyond the current re-screen jobs
 - drive more workflow actions through n8n, Camunda, and LangGraph
 - improve entity resolution confidence and duplicate automation
+- expand the live champion/challenger and drift monitoring flow into richer benchmark packs, business-outcome analytics, and model-quality dashboards
 
 ### 8.2 Enterprise / Production Hardening
 
-- integrate WSO2 identity
-- add role-aware permissions and approval policy
+- integrate WSO2 identity as a provider swap on top of the live local auth model
+- deepen row-level authorization, step-up auth, and approval policy enforcement
 - enable HTTPS and stronger secret handling
 - add monitoring, backups, and retention
 - load test and security test the system
@@ -728,12 +970,28 @@ If a new engineer joins today, tell them this:
 - the app host is `goaml-v2`
 - the model host is `gpu-01`
 - FastAPI and the HTML analyst UI are already wired together
+- local auth and RBAC are already live, including a seeded demo user set and a WSO2-ready settings desk
+- the Case Command Center is now the default case workspace
 - graph, document intelligence, entity workflows, and SAR queues are live
+- the XGBoost scorer is live in the transaction path, and MLflow is now the runtime source of truth for scorer registration, promotion, and deployment
+- the `Model Ops` page exposes scorer runtime metadata, registry versions, deployment alignment, approval workflow, champion/challenger evaluation, drift monitoring, and scorer business impact boards that surface version-level alert capture, false-positive posture, case conversion, SAR conversion, filed-SAR rate, case cycle time, and dominant typology
+- scorer drift capture, challenger evaluation, and model-monitoring alert dispatch are now scheduled through n8n and visible in `Workflow Ops`
+- Reporting Studio now includes executive KPI reporting, monthly operational summaries, typology mix, watchlist/screening posture, model/workflow health, team/region playbook trends, playbook effectiveness, manager false-positive reporting, filed SAR volume, backlog aging, persisted daily/weekly/monthly reporting snapshots, period-over-period movement boards, executive drilldowns with direct desk jumps, threshold-based reporting alerts, manager action recommendations, board-level summaries, scheduled distribution rules, a compliance oversight layer, an outcome-correlation layer, and workflow effectiveness analytics for SAR rebalance, playbook automation, and watchlist re-screen flows
+- Reporting Studio now also includes decision-quality drilldowns by typology, team, region, and feedback signal, so managers can move from quality metrics directly into the affected case set
+- Workflow Ops now includes feedback-to-action automation for noisy-alert hotspots, weak SAR draft interventions, and missing-evidence follow-up tasks driven by closed-loop analyst feedback
+- Reporting Studio now also includes quality-tuning recommendations plus reviewer-quality analytics for drafter rejection/rework posture and approval-to-filing lag by team and typology
+- Reporting Studio now also includes persisted decision-quality snapshot history and period-over-period quality movement so management can review quality posture historically, not only live
+- Workflow Ops now also includes quality recommendation automation for recurring noisy typologies and repeated drafter-quality hotspots detected across historical quality snapshots
+- management reports can now be exported in branded `JSON`, `CSV`, `PDF`, and `DOCX` packs using `manager`, `executive`, `compliance`, and `board` templates
+- historical-period management exports can now be generated from a selected snapshot instead of only the current live window
+- recurring report capture and distribution are now scheduled through n8n for daily snapshot capture, daily manager delivery, weekly distribution, daily manager CSV packs, weekly executive PDF packs, daily reporting alerts, monthly board PDF packs, and quarterly board DOCX packs
 - the current priority is not basic CRUD anymore
-- the current priority is operational depth, orchestration, and enterprise hardening
+- the current priority is operational depth, ML lifecycle control, orchestration, and enterprise hardening
 
 ## 11. Related Documents
 
 - [goaml-v2-project-overview-v3.md](/Users/ze/Documents/goaml-v2/goaml-v2-project-overview-v3.md)
 - [goAML-V2-PROJECT-OVERVIEW.md](/Users/ze/Documents/goaml-v2/goAML-V2-PROJECT-OVERVIEW.md)
 - [gpu-01-running-models.md](/Users/ze/Documents/goaml-v2/gpu-01-running-models.md)
+- [case-command-center-design-spec.md](/Users/ze/Documents/goaml-v2/case-command-center-design-spec.md)
+- [case-command-center-implementation-tasks.md](/Users/ze/Documents/goaml-v2/case-command-center-implementation-tasks.md)

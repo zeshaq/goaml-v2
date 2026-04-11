@@ -1,0 +1,109 @@
+[
+  {
+    "name": "goAML Scorer Drift Monitor Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "triggerAtHour": 8,
+                "triggerAtMinute": 40
+              }
+            ]
+          }
+        },
+        "id": "52333ce9-c3d1-4a13-a8e2-4dbf77d7cb30",
+        "name": "Weekday Drift Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          280,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/model-ops/scorer/drift/capture",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"actor\":\"n8n-scorer-drift\",\"sample_size\":40,\"lookback_hours\":2160,\"notes\":\"Scheduled weekday scorer drift capture.\",\"reset_baseline\":false}"
+        },
+        "id": "1efc95c6-8e4b-482d-af52-f1f596a3ce31",
+        "name": "Capture Drift Snapshot",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/workflow/model-monitoring/notify",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"triggered_by\":\"n8n-scorer-drift\",\"channels\":[\"slack\",\"email\"],\"include_stable\":false,\"force\":false}"
+        },
+        "id": "7f3956ab-ee50-4e7a-831c-e67fa949d7bc",
+        "name": "Dispatch Model Alerts",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          860,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Weekday Drift Schedule": {
+        "main": [
+          [
+            {
+              "node": "Capture Drift Snapshot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Capture Drift Snapshot": {
+        "main": [
+          [
+            {
+              "node": "Dispatch Model Alerts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "e39c1e5a-8b71-4a15-a6c4-5e5b3e8526e4"
+  }
+]

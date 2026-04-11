@@ -8,13 +8,14 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from models.transaction import (
     TransactionIngest,
     TransactionResponse,
     TransactionListItem,
 )
+from services.auth import AuthenticatedUser, require_permissions
 from services.scorer import score_transaction
 from services.transaction_db import create_transaction, create_alert
 from services.analytics import (
@@ -38,7 +39,10 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Ingest a transaction — scores risk and creates alert if needed",
 )
-async def ingest_transaction(payload: TransactionIngest):
+async def ingest_transaction(
+    payload: TransactionIngest,
+    current_user: AuthenticatedUser = Depends(require_permissions("ingest_transactions")),
+):
     processed_at = datetime.now(timezone.utc)
 
     # 1. Score with XGBoost (non-blocking fallback if scorer is down)
@@ -108,6 +112,11 @@ async def ingest_transaction(payload: TransactionIngest):
         risk_level      = score.risk_level,
         risk_factors    = score.risk_factors,
         ml_score_raw    = score.risk_score,
+        scoring_mode    = score.scoring_mode,
+        scorer_model_name = score.model_name,
+        scorer_model_version = score.model_version,
+        scorer_model_stage = score.model_stage,
+        scorer_registered_model_name = score.registered_model_name,
         alert_created   = alert_created,
         alert_ref       = alert_record["alert_ref"] if alert_record else None,
         transacted_at   = payload.transacted_at,
@@ -130,6 +139,7 @@ async def list_transactions(
     risk_level: str | None  = Query(None, description="low | medium | high | critical"),
     account:    str | None  = Query(None, description="Filter by sender/receiver account ref"),
     min_risk:   float | None = Query(None, ge=0.0, le=1.0),
+    current_user: AuthenticatedUser = Depends(require_permissions("view_transactions")),
 ):
     pool = get_pool()
 
@@ -199,7 +209,10 @@ async def list_transactions(
     "/transactions/{transaction_id}",
     summary="Get transaction detail by ID or ref",
 )
-async def get_transaction(transaction_id: str):
+async def get_transaction(
+    transaction_id: str,
+    current_user: AuthenticatedUser = Depends(require_permissions("view_transactions")),
+):
     pool = get_pool()
     async with pool.acquire() as conn:
         # Try UUID first, then transaction_ref

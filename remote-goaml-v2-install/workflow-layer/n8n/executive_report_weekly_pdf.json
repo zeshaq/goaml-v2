@@ -1,0 +1,104 @@
+[
+  {
+    "name": "goAML Executive Report Weekly PDF",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1
+                ],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 35
+              }
+            ]
+          }
+        },
+        "id": "a93b9c19-aaf8-4625-bf24-bf2944f6f03e",
+        "name": "Weekly Executive Report Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          260,
+          280
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/auth/login",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"username\":\"manager1\",\"password\":\"Goaml!2026\"}"
+        },
+        "id": "4e8f0a2f-d11a-420e-b431-2680b830e5e2",
+        "name": "Login as Manager",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          280
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "http://goaml-fastapi:8000/api/v1/manager/reports/export?range_days=180&format=pdf",
+          "sendHeaders": true,
+          "specifyHeaders": "json",
+          "jsonHeaders": "={\"Authorization\":\"Bearer \" + $json.access_token}"
+        },
+        "id": "3c5c8b4d-7cf5-48e2-b96b-72954ab6eb4f",
+        "name": "Export Executive PDF Report",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          860,
+          280
+        ]
+      }
+    ],
+    "connections": {
+      "Weekly Executive Report Schedule": {
+        "main": [
+          [
+            {
+              "node": "Login as Manager",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Login as Manager": {
+        "main": [
+          [
+            {
+              "node": "Export Executive PDF Report",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "tags": [],
+    "active": true,
+    "versionId": "f3a0c67b-5a4f-4c1c-88af-9d4ec4a3eb02"
+  }
+]

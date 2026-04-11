@@ -11,6 +11,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from models.analyst_ops import DecisionFeedbackItem
+from models.intelligence import CaseContextResponse, GraphDrilldownResponse, GroundedEvidenceItem
+
 
 class AlertStatus(str, Enum):
     open = "open"
@@ -72,6 +75,7 @@ class AlertDetail(AlertListItem):
     resolution_note: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     analyst_notes: list[AlertNoteItem] = Field(default_factory=list)
+    feedback: list[DecisionFeedbackItem] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -199,6 +203,7 @@ class SarDraftRequest(BaseModel):
     subject_account: str | None = None
     subject_type: str | None = None
     activity_type: str | None = None
+    prioritize_pinned_evidence: bool = True
 
 
 class SarWorkflowRequest(BaseModel):
@@ -212,6 +217,16 @@ class SarFileRequest(BaseModel):
     filing_ref: str | None = None
     approved_by: str | None = None
     reviewed_by: str | None = None
+
+
+class SarUpdateRequest(BaseModel):
+    narrative: str | None = Field(None, min_length=10, max_length=20000)
+    subject_name: str | None = Field(None, max_length=255)
+    subject_type: str | None = Field(None, max_length=64)
+    subject_account: str | None = Field(None, max_length=255)
+    activity_type: str | None = Field(None, max_length=255)
+    editor: str | None = Field(None, max_length=255)
+    note: str | None = Field(None, max_length=4000)
 
 
 class SarReportDetail(BaseModel):
@@ -239,6 +254,7 @@ class SarReportDetail(BaseModel):
     ai_drafted: bool
     ai_model: str | None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    used_evidence: list[GroundedEvidenceItem] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -368,6 +384,50 @@ class SarRebalanceResponse(BaseModel):
     generated_at: datetime
 
 
+class SlaSnapshotCaptureRequest(BaseModel):
+    triggered_by: str | None = None
+    source: str = "manual"
+    force: bool = False
+    bootstrap_if_empty: bool = False
+    backfill_hours: int = Field(0, ge=0, le=24 * 30)
+    interval_minutes: int = Field(60, ge=15, le=24 * 60)
+
+
+class SarQueueSnapshotPoint(BaseModel):
+    captured_at: datetime
+    counts: SarQueueCounts = Field(default_factory=SarQueueCounts)
+    overall_breached_count: int = 0
+    overall_due_soon_count: int = 0
+    active_owner_count: int = 0
+    avg_active_age_hours: float | None = None
+    oldest_active_age_hours: float | None = None
+    queue_metrics: dict[str, SarQueueSlaMetric] = Field(default_factory=dict)
+    source: str | None = None
+    captured_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SarQueueTrendResponse(BaseModel):
+    generated_at: datetime
+    range_hours: int
+    snapshot_count: int = 0
+    oldest_snapshot_at: datetime | None = None
+    latest_snapshot_at: datetime | None = None
+    points: list[SarQueueSnapshotPoint] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+
+
+class SlaSnapshotCaptureResponse(BaseModel):
+    captured: bool = True
+    inserted_count: int = 0
+    snapshot_count: int = 0
+    latest_snapshot_at: datetime | None = None
+    oldest_snapshot_at: datetime | None = None
+    source: str | None = None
+    triggered_by: str | None = None
+    summary: list[str] = Field(default_factory=list)
+
+
 class ScreenEntityRequest(BaseModel):
     entity_name: str = Field(..., min_length=2, max_length=512)
     trigger: str = "manual"
@@ -439,6 +499,7 @@ class CaseTaskItem(BaseModel):
     updated_at: datetime | None = None
     due_at: datetime | None = None
     completed_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseTaskCreate(BaseModel):
@@ -449,6 +510,7 @@ class CaseTaskCreate(BaseModel):
     priority: CaseTaskPriority = CaseTaskPriority.medium
     note: str | None = None
     due_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseTaskUpdate(BaseModel):
@@ -456,6 +518,165 @@ class CaseTaskUpdate(BaseModel):
     assigned_to: str | None = None
     note: str | None = None
     actor: str | None = None
+
+
+class PlaybookChecklistItem(BaseModel):
+    key: str
+    label: str
+    description: str | None = None
+    status: str
+    blocking: bool = True
+    guidance: str | None = None
+    evidence_related: bool = False
+    auto_task_id: UUID | None = None
+
+
+class PlaybookEvidenceRuleItem(BaseModel):
+    rule_key: str
+    label: str
+    required: bool = True
+    met: bool = False
+    current_value: float | int | bool | str | None = None
+    required_value: float | int | bool | str | None = None
+    message: str | None = None
+
+
+class CasePlaybookState(BaseModel):
+    typology: str
+    display_name: str
+    active: bool = True
+    checklist_progress: int = 0
+    checklist_completed_count: int = 0
+    checklist_total_count: int = 0
+    checklist: list[PlaybookChecklistItem] = Field(default_factory=list)
+    blocked_steps: list[str] = Field(default_factory=list)
+    required_evidence_missing: list[str] = Field(default_factory=list)
+    evidence_rules: list[PlaybookEvidenceRuleItem] = Field(default_factory=list)
+    suggested_tasks: list[str] = Field(default_factory=list)
+    sla_targets: dict[str, float] = Field(default_factory=dict)
+    summary: list[str] = Field(default_factory=list)
+    configured_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class PlaybookConfigItem(BaseModel):
+    typology: str
+    display_name: str
+    checklist: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_rules: dict[str, Any] = Field(default_factory=dict)
+    sla_targets: dict[str, dict[str, float]] = Field(default_factory=dict)
+    task_templates: list[dict[str, Any]] = Field(default_factory=list)
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlaybookConfigUpdateRequest(BaseModel):
+    display_name: str | None = Field(None, min_length=3, max_length=255)
+    checklist: list[dict[str, Any]] | None = None
+    evidence_rules: dict[str, Any] | None = None
+    sla_targets: dict[str, dict[str, float]] | None = None
+    task_templates: list[dict[str, Any]] | None = None
+    updated_by: str | None = Field(None, max_length=255)
+    metadata: dict[str, Any] | None = None
+
+
+class PlaybookBackfillResponse(BaseModel):
+    processed_count: int = 0
+    applied_count: int = 0
+    task_count: int = 0
+    summary: list[str] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class PlaybookChecklistComplianceItem(BaseModel):
+    typology: str
+    display_name: str
+    case_count: int = 0
+    checklist_completion_rate: float = 0.0
+    fully_completed_case_rate: float = 0.0
+    avg_progress: float = 0.0
+    blocked_case_rate: float = 0.0
+    false_positive_rate: float = 0.0
+    sar_conversion_rate: float = 0.0
+    filed_sar_rate: float = 0.0
+    missing_evidence_case_rate: float = 0.0
+
+
+class PlaybookMissedStepItem(BaseModel):
+    typology: str
+    display_name: str
+    step_key: str
+    step_label: str
+    missed_count: int = 0
+    affected_case_rate: float = 0.0
+    blocking: bool = True
+    evidence_related: bool = False
+
+
+class PlaybookBlockedTrendPoint(BaseModel):
+    bucket: str
+    blocked_case_count: int = 0
+    blocked_step_total: int = 0
+    missing_evidence_total: int = 0
+
+
+class PlaybookScopeBreakdownItem(BaseModel):
+    scope_key: str
+    scope_label: str
+    case_count: int = 0
+    typology_count: int = 0
+    avg_progress: float = 0.0
+    blocked_case_rate: float = 0.0
+    missing_evidence_case_rate: float = 0.0
+    false_positive_rate: float = 0.0
+    sar_conversion_rate: float = 0.0
+    filed_sar_rate: float = 0.0
+
+
+class PlaybookStepHeatmapItem(BaseModel):
+    scope_type: str
+    scope_key: str
+    scope_label: str
+    typology: str
+    display_name: str
+    step_key: str
+    step_label: str
+    affected_case_count: int = 0
+    affected_case_rate: float = 0.0
+    blocking_case_count: int = 0
+    evidence_gap_case_count: int = 0
+
+
+class PlaybookAnalyticsResponse(BaseModel):
+    generated_at: datetime
+    range_days: int
+    totals: dict[str, Any] = Field(default_factory=dict)
+    typologies: list[PlaybookChecklistComplianceItem] = Field(default_factory=list)
+    most_missed_steps: list[PlaybookMissedStepItem] = Field(default_factory=list)
+    blocked_step_trends: list[PlaybookBlockedTrendPoint] = Field(default_factory=list)
+    team_breakdown: list[PlaybookScopeBreakdownItem] = Field(default_factory=list)
+    region_breakdown: list[PlaybookScopeBreakdownItem] = Field(default_factory=list)
+    worst_offending_steps: list[PlaybookStepHeatmapItem] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+
+
+class PlaybookAutomationSettings(BaseModel):
+    stuck_hours: float = 18.0
+    evidence_gap_warning_hours: float = 8.0
+    cooldown_hours: float = 12.0
+    max_cases: int = 50
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+    summary: list[str] = Field(default_factory=list)
+
+
+class PlaybookAutomationSettingsUpdateRequest(BaseModel):
+    stuck_hours: float | None = Field(None, ge=1, le=168)
+    evidence_gap_warning_hours: float | None = Field(None, ge=1, le=72)
+    cooldown_hours: float | None = Field(None, ge=1, le=168)
+    max_cases: int | None = Field(None, ge=1, le=200)
+    updated_by: str | None = None
 
 
 class CaseNoteItem(BaseModel):
@@ -468,3 +689,120 @@ class CaseNoteItem(BaseModel):
 class CaseNoteCreate(BaseModel):
     author: str | None = None
     text: str = Field(..., min_length=2, max_length=4000)
+
+
+class CaseEvidenceItem(BaseModel):
+    id: UUID
+    case_id: UUID
+    evidence_type: str
+    source_evidence_id: str | None = None
+    title: str
+    summary: str | None = None
+    source: str | None = None
+    importance: int = 50
+    include_in_sar: bool = False
+    pinned_by: str | None = None
+    pinned_at: datetime
+    updated_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CaseEvidencePinRequest(BaseModel):
+    evidence_type: str = Field(..., min_length=2, max_length=64)
+    source_evidence_id: str | None = Field(None, max_length=255)
+    title: str = Field(..., min_length=2, max_length=1000)
+    summary: str | None = Field(None, max_length=4000)
+    source: str | None = Field(None, max_length=64)
+    importance: int = Field(50, ge=0, le=100)
+    include_in_sar: bool = False
+    pinned_by: str | None = Field(None, max_length=255)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CaseEvidenceUpdateRequest(BaseModel):
+    title: str | None = Field(None, min_length=2, max_length=1000)
+    summary: str | None = Field(None, max_length=4000)
+    importance: int | None = Field(None, ge=0, le=100)
+    include_in_sar: bool | None = None
+    updated_by: str | None = Field(None, max_length=255)
+    metadata: dict[str, Any] | None = None
+
+
+class CaseEvidenceDeleteResponse(BaseModel):
+    status: str
+    case_id: UUID
+    evidence_id: UUID
+
+
+class CaseWorkflowStateResponse(BaseModel):
+    case_id: UUID
+    case_ref: str
+    routing: dict[str, Any] = Field(default_factory=dict)
+    queue_item: dict[str, Any] | None = None
+    owner_workload: dict[str, Any] | None = None
+    active_process: dict[str, Any] | None = None
+    active_task: dict[str, Any] | None = None
+    expected_role: str | None = None
+    process_history: list[dict[str, Any]] = Field(default_factory=list)
+    latest_automation_touches: list[dict[str, Any]] = Field(default_factory=list)
+    quick_links: dict[str, Any] = Field(default_factory=dict)
+    notifications: list[dict[str, Any]] = Field(default_factory=list)
+    summary: list[str] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class FilingReadinessResponse(BaseModel):
+    case_id: UUID
+    case_ref: str
+    sar_id: UUID | None = None
+    sar_status: str | None = None
+    overall_status: str
+    score: int = 0
+    blocking_items: list[str] = Field(default_factory=list)
+    warning_items: list[str] = Field(default_factory=list)
+    passed_checks: list[str] = Field(default_factory=list)
+    recommended_next_actions: list[str] = Field(default_factory=list)
+    playbook: CasePlaybookState | None = None
+    generated_at: datetime
+
+
+class CaseFilingPackRequest(BaseModel):
+    generated_by: str | None = None
+    include_notes: bool = True
+    include_tasks: bool = True
+    include_ai_summary: bool = True
+    evidence_limit: int = Field(12, ge=3, le=30)
+
+
+class CaseFilingPackResponse(BaseModel):
+    case_id: UUID
+    case_ref: str
+    generated_by: str | None = None
+    generated_at: datetime
+    summary: list[str] = Field(default_factory=list)
+    ai_summary: str | None = None
+    risk_factors: list[str] = Field(default_factory=list)
+    sar: SarReportDetail | None = None
+    workflow: CaseWorkflowStateResponse | None = None
+    filing_readiness: FilingReadinessResponse
+    grounding_mode: str | None = None
+    used_evidence: list[GroundedEvidenceItem] = Field(default_factory=list)
+    filing_evidence: list[GroundedEvidenceItem] = Field(default_factory=list)
+    supporting_evidence: list[GroundedEvidenceItem] = Field(default_factory=list)
+    notes: list[CaseNoteItem] = Field(default_factory=list)
+    tasks: list[CaseTaskItem] = Field(default_factory=list)
+
+
+class CaseWorkspaceResponse(BaseModel):
+    case: CaseDetail
+    events: list[CaseEventItem] = Field(default_factory=list)
+    sar: SarReportDetail | None = None
+    context: CaseContextResponse | None = None
+    graph: GraphDrilldownResponse | None = None
+    tasks: list[CaseTaskItem] = Field(default_factory=list)
+    notes: list[CaseNoteItem] = Field(default_factory=list)
+    feedback: list[DecisionFeedbackItem] = Field(default_factory=list)
+    workflow: CaseWorkflowStateResponse
+    pinned_evidence: list[CaseEvidenceItem] = Field(default_factory=list)
+    filing_readiness: FilingReadinessResponse
+    playbook: CasePlaybookState | None = None

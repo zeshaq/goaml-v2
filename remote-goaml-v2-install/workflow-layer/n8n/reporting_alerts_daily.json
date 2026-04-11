@@ -1,0 +1,79 @@
+[
+  {
+    "name": "goAML Reporting Alerts Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [1, 2, 3, 4, 5],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 5
+              }
+            ]
+          }
+        },
+        "id": "rpt-alerts-schedule-01",
+        "name": "Weekday Reporting Alert Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [260, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/auth/login",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"username\":\"manager1\",\"password\":\"Goaml!2026\"}"
+        },
+        "id": "rpt-alerts-login-02",
+        "name": "Login as Manager",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [560, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/workflow/reports/alerts/run",
+          "sendHeaders": true,
+          "specifyHeaders": "json",
+          "jsonHeaders": "={\"Authorization\":\"Bearer \" + $json.access_token}",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"triggered_by\":\"n8n-reporting-alerts\",\"channels\":[\"app\",\"slack\",\"email\"],\"snapshot_scope\":\"manager\",\"range_days\":180,\"force\":false}"
+        },
+        "id": "rpt-alerts-run-03",
+        "name": "Run Reporting Alerts",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [860, 260]
+      }
+    ],
+    "connections": {
+      "Weekday Reporting Alert Schedule": {
+        "main": [[{ "node": "Login as Manager", "type": "main", "index": 0 }]]
+      },
+      "Login as Manager": {
+        "main": [[{ "node": "Run Reporting Alerts", "type": "main", "index": 0 }]]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": { "templateCredsSetupCompleted": true },
+    "tags": [],
+    "active": true,
+    "versionId": "rpt-alerts-ver-01"
+  }
+]

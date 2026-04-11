@@ -1,0 +1,75 @@
+[
+  {
+    "name": "goAML Scheduled Report Distribution Daily",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [1, 2, 3, 4, 5],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 25
+              }
+            ]
+          }
+        },
+        "id": "f4a2f8aa-0ac4-4b2a-a99b-8a0a7a390001",
+        "name": "Weekday Distribution Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [260, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/auth/login",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={\"username\":\"manager1\",\"password\":\"Goaml!2026\"}"
+        },
+        "id": "40e99929-8c9a-431f-8f10-70d9ee5a0002",
+        "name": "Login as Manager",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [560, 260]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://goaml-fastapi:8000/api/v1/manager/reports/distribute/run?cadence=daily&range_days=180&actor=manager1",
+          "sendHeaders": true,
+          "specifyHeaders": "json",
+          "jsonHeaders": "={\"Authorization\":\"Bearer \" + $json.access_token}"
+        },
+        "id": "d05c1268-81a4-4c26-af44-b5966a9f0003",
+        "name": "Run Daily Distribution",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [860, 260]
+      }
+    ],
+    "connections": {
+      "Weekday Distribution Schedule": {
+        "main": [[{ "node": "Login as Manager", "type": "main", "index": 0 }]]
+      },
+      "Login as Manager": {
+        "main": [[{ "node": "Run Daily Distribution", "type": "main", "index": 0 }]]
+      }
+    },
+    "pinData": {},
+    "settings": {
+      "timezone": "Asia/Dhaka",
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all"
+    },
+    "staticData": null,
+    "meta": { "templateCredsSetupCompleted": true },
+    "tags": [],
+    "active": true,
+    "versionId": "b10e1f5c-42d0-42a6-91bf-000000000002"
+  }
+]
